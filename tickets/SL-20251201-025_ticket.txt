@@ -1,0 +1,7 @@
+SNOW LIWA — Booking Ticket
+--------------------------
+Booking ID : SL-20251201-025
+Name       : FAHADF
+Phone      : 05028992932
+Tickets    : 1
+Total (AED): 3.00
