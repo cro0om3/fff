@@ -1,0 +1,7 @@
+SNOW LIWA — Booking Ticket
+--------------------------
+Booking ID : SL-20251201-023
+Name       : 0502992932
+Phone      : 9710502992692
+Tickets    : 1
+Total (AED): 3.00

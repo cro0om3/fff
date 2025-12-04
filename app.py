@@ -2,6 +2,7 @@ import base64
 from datetime import datetime
 from pathlib import Path
 import urllib.parse
+import json
 import requests
 import streamlit as st  # type: ignore
 import os
@@ -9,17 +10,29 @@ import pandas as pd
 
 # Local helpers for loading/saving settings
 from utility.settings_utils import load_settings, save_settings
+from utility.ui import inject_snow_only, generate_ticket_pdf_from_template
+# Dynamically import theme module to avoid static analysis/import issues
+try:
+    import importlib
+    try:
+        _theme_mod = importlib.import_module("snow_liwa.theme")
+    except Exception:
+        _theme_mod = importlib.import_module("theme")
+    apply_snow_liwa_theme = getattr(_theme_mod, "apply_snow_liwa_theme")
+    render_snow_liwa_header = getattr(_theme_mod, "render_snow_liwa_header")
+except Exception:
+    # If import fails, provide no-op fallbacks to keep runtime safe
+    def apply_snow_liwa_theme():
+        return
+
+    def render_snow_liwa_header(title: str, subtitle: str = ""):
+        return
 
 # =========================
 # BASIC CONFIG
 # =========================
 
-st.set_page_config(
-    page_title="SNOW LIWA",
-    page_icon="❄️",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+# page config and global CSS moved to `snow_liwa.theme.apply_snow_liwa_theme`
 
 
 # =========================
@@ -32,7 +45,7 @@ HERO_IMAGE_PATH = BACKGROUND_IMAGE_PATH
 DATA_DIR = BASE_DIR / "data"
 BOOKINGS_FILE = DATA_DIR / "bookings.xlsx"
 
-TICKET_PRICE = 175  # AED per ticket
+TICKET_PRICE = 3  # AED per ticket
 
 
 # =========================
@@ -244,132 +257,12 @@ def get_payment_intent(pi_id: str) -> dict | None:
         st.error(f"Ziina API error ({resp.status_code}): {msg}")
         return None
     return resp.json()
-
-
-# -------------------------
-# One-button helpers (Book + Pay)
-# -------------------------
-
-
-def create_booking_and_get_amount(form_data: dict) -> tuple[str, float]:
-    """Create a booking row in storage and return the booking_id and total amount.
-
-    This uses the existing helpers `get_next_booking_id`, `save_bookings`, and
-    `TICKET_PRICE` to compute the real amount. It does not call the payment API.
-    """
-    df = load_bookings()
-    booking_id = get_next_booking_id(df)
-    # Determine tickets count from common field names
-    tickets = int(form_data.get("tickets") or form_data.get("people_count") or 1)
-    total_amount = float(tickets) * TICKET_PRICE
-
-    new_row = {
-        "booking_id": booking_id,
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "name": form_data.get("name") or form_data.get("customer_name") or "",
-        "phone": form_data.get("phone") or "",
-        "tickets": tickets,
-        "ticket_price": TICKET_PRICE,
-        "total_amount": total_amount,
-        "status": "pending",
-        "payment_intent_id": None,
-        "payment_status": "pending",
-        "redirect_url": None,
-        "notes": form_data.get("notes") or "",
-    }
-    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    save_bookings(df)
-    return booking_id, total_amount
-
-
-def create_payment_link(order_id: str, amount: float, customer_name: str) -> tuple[str | None, str | None]:
-    """Call the existing payment integration to create a payment link and update the booking row.
-
-    Returns (payment_intent_id, redirect_url) or (None, None) on failure.
-    """
-    if not has_ziina_configured():
-        st.error("Ziina API not configured. Payment link cannot be created.")
-        return None, None
-
-    with st.spinner("جاري إنشاء رابط الدفع عبر Ziina..."):
-        pi = create_payment_intent(amount, order_id, customer_name)
-
-    if not pi:
-        return None, None
-
-    payment_intent_id = str(
-        pi.get("id")
-        or pi.get("payment_intent_id")
-        or pi.get("paymentIntent", {}).get("id")
-        or ""
-    )
-
-    redirect_url = (
-        pi.get("redirect_url")
-        or pi.get("hosted_page_url")
-        or (pi.get("next_action") or {}).get("redirect_url")
-    )
-
-    def _find_first_url(obj):
-        if isinstance(obj, str):
-            if obj.startswith("http://") or obj.startswith("https://"):
-                return obj
-            return None
-        if isinstance(obj, dict):
-            for v in obj.values():
-                found = _find_first_url(v)
-                if found:
-                    return found
-        if isinstance(obj, list):
-            for item in obj:
-                found = _find_first_url(item)
-                if found:
-                    return found
-        return None
-
-    if not redirect_url:
-        redirect_url = _find_first_url(pi)
-
-    # Update booking row with payment fields
-    df = load_bookings()
-    mask = df["booking_id"].astype(str) == str(order_id)
-    if mask.any():
-        df.loc[mask, "payment_intent_id"] = payment_intent_id or ""
-        df.loc[mask, "payment_status"] = pi.get("status") or df.loc[mask, "payment_status"]
-        df.loc[mask, "redirect_url"] = redirect_url
-        # If the payment API already reports completed, mark paid
-        if pi.get("status") == "completed":
-            df.loc[mask, "status"] = "paid"
-        save_bookings(df)
-
-    return payment_intent_id or None, redirect_url or None
-
-
-def verify_payment(payment_id: str) -> str | None:
-    """Verify payment status via existing get_payment_intent and update booking record.
-
-    Returns normalized status string (e.g. 'paid', 'failed', 'cancelled') or None on error.
-    """
-    pi = get_payment_intent(payment_id)
-    if not pi:
-        return None
-    status = pi.get("status") or (pi.get("data") or {}).get("status")
-
-    df = load_bookings()
-    mask = df["payment_intent_id"].astype(str) == str(payment_id)
-    if mask.any():
-        df.loc[mask, "payment_status"] = status
-        if status == "completed":
-            df.loc[mask, "status"] = "paid"
-        elif status in ("failed", "canceled"):
-            df.loc[mask, "status"] = "cancelled"
-        save_bookings(df)
-    return status
 # =========================
 # DEBUG/ADMIN: TEST ZIINA API
 # =========================
 def test_ziina_credentials():
-    """Test Ziina API credentials by creating a dummy payment intent (does not create booking)."""
+    """Test Ziina API credentials by 
+    creating a dummy payment intent (does not create booking)."""
     access_token = get_ziina_access_token()
     app_base_url = get_ziina_app_base_url()
     test_mode = True  # Always test mode for this
@@ -401,8 +294,13 @@ def test_ziina_credentials():
         return
     logging.info(f"[ZIINA-TEST] Response status: {resp.status_code}")
     logging.info(f"[ZIINA-TEST] Response text: {resp.text}")
-    st.write(f"**Status code:** {resp.status_code}")
-    st.write(f"**Response:** {resp.text}")
+    # Only show raw response to admin users
+    is_admin = st.session_state.get("is_admin", False)
+    if is_admin:
+        st.write(f"**Status code:** {resp.status_code}")
+        st.write(f"**Response:** {resp.text}")
+    else:
+        st.success("Ziina test request completed (admin-only details hidden).")
 
 
 def sync_payments_from_ziina(df: pd.DataFrame) -> pd.DataFrame:
@@ -506,6 +404,28 @@ def inject_base_css():
             padding: 0;
             backdrop-filter: blur(10px);
         }
+        /* Layout spacing improvements (prevent overlapping and add breathing room) */
+        .page-container { padding-top: 2rem; padding-bottom: 3rem; }
+        .page-card { padding: 1.25rem; z-index: 5; position: relative; }
+        .section-card { padding: 2rem; margin-bottom: 1.6rem; border-radius: 18px; }
+        .ticket-card { display: flex; flex-direction: column; gap: 1rem; }
+        .ticket-card input, .ticket-card textarea, .ticket-card .stNumberInput, .ticket-card .stTextInput {
+            margin-bottom: 0 !important;
+        }
+        .ticket-poster-wrapper { padding: 1rem !important; }
+        .hero-content { padding: 3rem 2.4rem; }
+        .form-row { margin-bottom: 1rem; }
+        /* Ensure columns don't collapse into each other on narrow widths */
+        @media (min-width: 960px) {
+            .stColumns { gap: 2rem !important; }
+        }
+        @media (max-width: 959px) {
+            .page-card, .section-card { padding-left: 1rem; padding-right: 1rem; }
+            .ticket-poster-wrapper { height: auto; }
+        }
+        /* Push the snow elements behind the page-card content */
+        .snowflake { z-index: 1 !important; }
+        .stApp > div { z-index: 2; }
         @media (max-width: 800px) {
             .page-card { padding: 0; }
         }
@@ -759,8 +679,8 @@ def page_nav():
         st.title("SNOW LIWA")
         nav = st.radio(
             "Navigation",
-            ["Welcome", "Who we are", "Experience", "Contact", "Dashboard 2", "Settings 2"],
-            index=["Welcome", "Who we are", "Experience", "Contact", "Dashboard 2", "Settings 2"].index(st.session_state.page) if st.session_state.page in ["Welcome", "Who we are", "Experience", "Contact", "Dashboard 2", "Settings 2"] else 0,
+            ["Welcome", "Who we are", "Experience", "Contact", "Payment", "Dashboard 2", "Settings 2"],
+            index=["Welcome", "Who we are", "Experience", "Contact", "Payment", "Dashboard 2", "Settings 2"].index(st.session_state.page) if st.session_state.page in ["Welcome", "Who we are", "Experience", "Contact", "Payment", "Dashboard 2", "Settings 2"] else 0,
             key="sidebar_nav_radio",
         )
         st.session_state.page = nav
@@ -769,15 +689,19 @@ def page_nav():
 def get_query_params() -> dict:
     """Handle query params in both new and old Streamlit."""
     try:
-        qp = st.query_params
-        if hasattr(qp, "to_dict"):
-            return qp.to_dict()
-        return dict(qp)
+        # Prefer the newer `st.query_params` API (stable). Use to_dict when available.
+        qp = getattr(st, "query_params", None)
+        if qp is not None:
+            if hasattr(qp, "to_dict"):
+                return qp.to_dict()
+            return dict(qp)
     except Exception:
-        try:
-            return st.experimental_get_query_params()
-        except Exception:
-            return {}
+        pass
+    # Fallback for older Streamlit versions
+    try:
+        return st.experimental_get_query_params()
+    except Exception:
+        return {}
 
 
 def _normalize_query_value(value):
@@ -802,7 +726,6 @@ def render_customer_info_panel():
             'مشروع شبابي إماراتي من قلب منطقة الظفرة.<br>'
             'يقدم تجربة شتوية فريدة تجمع بين أجواء ليوا الساحرة ولمسات من البساطة والجمال.'
             '<br><br>'
-            '# TODO: insert FHD\'s final about-us text here'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -837,6 +760,34 @@ def render_customer_info_panel():
             unsafe_allow_html=True,
         )
     st.markdown('</div>', unsafe_allow_html=True)
+
+
+def render_redirect():
+    """Temporary redirect page: reads `st.session_state['temp_redirect']` and redirects the browser."""
+    try:
+        url = st.session_state.get("temp_redirect") or get_ziina_app_base_url() or "/"
+    except Exception:
+        url = "/"
+    st.markdown('<div class="snow-title">جارٍ التحويل… الرجاء الانتظار</div>', unsafe_allow_html=True)
+    st.write('Please wait while we redirect you to the secure payment page. If nothing happens, use the link below:')
+    # Visible fallback link/button
+    st.markdown(f"[Continue]({url})")
+    # Add meta refresh as a browser fallback and a robust JS assign using a JSON-encoded URL
+    try:
+        js_url = json.dumps(url)
+    except Exception:
+        js_url = '"/"'
+    st.markdown(f'<meta http-equiv="refresh" content="1;url={urllib.parse.quote(url, safe=":/?&=+#%")}">', unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <script>
+        console.log('Redirect helper: attempting redirect to', {js_url});
+        // give user 1 second to read the message, then redirect
+        setTimeout(function() {{ try {{ window.location.assign({js_url}); }} catch(e) {{ console.error(e); window.location.href = {js_url}; }} }}, 1000);
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def render_welcome():
     settings = st.session_state.get("settings", {})
@@ -873,11 +824,14 @@ def render_welcome():
         # --- CTAs ---
         cta1, cta2 = st.columns([1.2, 1.1], gap="small")
         with cta1:
-            if st.button("احجز تذكرتك الآن", key="cta_book", use_container_width=True):
+            if st.button("احجز تذكرتك الآن", key="cta_book", width='stretch'):
                 st.session_state["scroll_to_booking"] = True
-                st.rerun()
+                try:
+                    st.rerun()
+                except Exception:
+                    return
         with cta2:
-            if st.button("تعرف علينا أكثر", key="cta_about", use_container_width=True):
+            if st.button("تعرف علينا أكثر", key="cta_about", width='stretch'):
                 st.session_state["scroll_to_about"] = True
                 st.rerun()
 
@@ -886,10 +840,10 @@ def render_welcome():
         # --- ICE SKATING / SLADDING pills ---
         pill1, pill2 = st.columns([1,1], gap="small")
         with pill1:
-            if st.button("ICE SKATING", key="ice_skating_pill", use_container_width=True):
+            if st.button("ICE SKATING", key="ice_skating_pill", width='stretch'):
                 st.session_state["selected_activity"] = "ice_skating"
         with pill2:
-            if st.button("SLADDING", key="sladding_pill", use_container_width=True):
+            if st.button("SLADDING", key="sladding_pill", width='stretch'):
                 st.session_state["selected_activity"] = "sladding"
 
         with col2:
@@ -974,7 +928,7 @@ def render_welcome():
                         <span>Snow Experience</span>
                     </div>
                     <p class="snow-experience-text">
-                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 175.
+                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 3.
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1013,16 +967,24 @@ def render_welcome():
     with col_left:
         st.markdown('<div class="ticket-card">', unsafe_allow_html=True)
         with st.form("booking_form"):
+            st.markdown('<div class="form-row">', unsafe_allow_html=True)
             name = st.text_input("Name / الاسم الكامل")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="form-row">', unsafe_allow_html=True)
             phone = st.text_input("Phone / رقم الهاتف (واتساب)")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="form-row">', unsafe_allow_html=True)
             tickets = st.number_input("Number of tickets / عدد التذاكر", 1, 20, 1)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="form-row">', unsafe_allow_html=True)
             notes = st.text_area("Notes (optional) / ملاحظات اختيارية", height=70)
-            # in-form placeholder: we create an empty container inside the form so
-            # any post-submit controls rendered into it appear visually inside
-            # the same ticket card / form container.
-            post_submit_placeholder = st.empty()
-            # Single submit button: user clicks to create the booking
-            submitted = st.form_submit_button("احجز / Book")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # Optionally show activity selection if needed in future
+            submitted = st.form_submit_button("Confirm booking / إصدار التذكرة")
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_right:
@@ -1085,64 +1047,116 @@ def render_welcome():
     )
 
     if "submitted" in locals() and submitted:
-        # One-button Book + Pay flow
         if not name.strip() or not phone.strip():
             st.error("الرجاء إدخال الاسم ورقم الهاتف.")
         else:
-            form_data = {
+            df = load_bookings()
+            booking_id = get_next_booking_id(df)
+            total_amount = float(tickets) * TICKET_PRICE
+
+            payment_intent_id = None
+            payment_status = None
+            redirect_url = None
+            if has_ziina_configured():
+                with st.spinner("جاري إنشاء رابط الدفع عبر Ziina..."):
+                    pi = create_payment_intent(total_amount, booking_id, name)
+                if pi:
+                    payment_intent_id = str(
+                        pi.get("id")
+                        or pi.get("payment_intent_id")
+                        or pi.get("paymentIntent", {}).get("id")
+                        or ""
+                    )
+                    payment_status = pi.get("status")
+                    redirect_url = (
+                        pi.get("redirect_url")
+                        or pi.get("hosted_page_url")
+                        or pi.get("next_action", {}).get("redirect_url")
+                    )
+
+            new_row = {
+                "booking_id": booking_id,
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "name": name,
                 "phone": phone,
                 "tickets": int(tickets),
+                "ticket_price": TICKET_PRICE,
+                "total_amount": total_amount,
+                "status": "paid" if payment_status == "completed" else "pending",
+                "payment_intent_id": payment_intent_id,
+                "payment_status": payment_status or "pending",
+                "redirect_url": redirect_url,
                 "notes": notes,
             }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            save_bookings(df)
 
-            # 1) Create booking and compute real amount
-            booking_id, total_amount = create_booking_and_get_amount(form_data)
+            ticket_text = build_ticket_text(booking_id, name, phone, int(tickets), total_amount)
+            ticket_bytes = ticket_text.encode("utf-8")
 
-            # 2) Create payment link via Ziina (or configured gateway)
-            payment_intent_id, checkout_url = create_payment_link(booking_id, total_amount, name)
+            st.success(
+                f"تم إنشاء الحجز! رقم الحجز: **{booking_id}** والمبلغ **{total_amount:.2f} AED**. "
+                "يمكنك تنزيل التذكرة أو إرسالها مباشرة."
+            )
+            cta_ticket, cta_wa = st.columns(2, gap="small")
+            with cta_ticket:
+                # Create PDF ticket including buyer name (best-effort).
+                try:
+                    tickets_dir = Path("tickets")
+                    tickets_dir.mkdir(parents=True, exist_ok=True)
+                    pdf_path = tickets_dir / f"{booking_id}_ticket.pdf"
+                    try:
+                        generate_ticket_pdf_from_template(booking_id, name, phone, int(tickets), total_amount, pdf_path)
+                    except Exception:
+                        # swallow PDF generation errors and fallback to txt
+                        pass
 
-            # 3) Store in session for later verification if needed
-            st.session_state["current_order_id"] = booking_id
-            st.session_state["current_payment_intent_id"] = payment_intent_id
-            st.session_state["current_amount"] = total_amount
+                    if pdf_path.exists():
+                        with open(pdf_path, "rb") as f:
+                            st.download_button(
+                                "⬇️ تنزيل التذكرة باسم العميل (PDF)",
+                                data=f,
+                                file_name=pdf_path.name,
+                                mime="application/pdf",
+                                width='stretch',
+                            )
+                    else:
+                        st.download_button(
+                            "⬇️ تنزيل التذكرة باسم العميل (TXT)",
+                            data=ticket_bytes,
+                            file_name=f"{booking_id}_ticket.txt",
+                            mime="text/plain",
+                            width='stretch',
+                        )
+                except Exception:
+                    st.download_button(
+                        "⬇️ تنزيل التذكرة باسم العميل (TXT)",
+                        data=ticket_bytes,
+                        file_name=f"{booking_id}_ticket.txt",
+                        mime="text/plain",
+                        width='stretch',
+                    )
+            with cta_wa:
+                share_url = f"https://wa.me/?text={urllib.parse.quote(ticket_text)}"
+                st.link_button(
+                    "📲 إرسال التذكرة على واتساب",
+                    share_url,
+                    width='stretch',
+                )
 
-            # 4) Friendly redirect page with countdown and backup link
-            if checkout_url:
-                safe_url = checkout_url.replace("'", "\\'")
-                # Show a friendly redirecting screen with a 5-second countdown
-                st.markdown("### ✅ تم إنشاء الحجز — جارٍ التحويل لصفحة الدفع")
-                st.write("ستتم إعادة التوجيه تلقائيًا خلال بضع ثوانٍ. إذا لم يتم التحويل، استخدم الرابط الاحتياطي أدناه.")
-                st.markdown(f"- المبلغ: **{total_amount:.2f} AED**")
-                st.markdown(f"- رقم الحجز: **{booking_id}**")
-                # Backup clickable link
-                st.markdown(f"[فتح رابط الدفع الآن]({checkout_url})")
-
-                # Inject small JS to show countdown and redirect after 5 seconds
-                js = f"""
-                <div id="redirect-box">
-                    <p>سيتم التحويل خلال <span id="countdown">5</span> ثوانٍ...</p>
-                </div>
-                <script>
-                (function(){{
-                  var seconds = 5;
-                  var el = document.getElementById('countdown');
-                  var iv = setInterval(function(){{
-                    seconds -= 1;
-                    if (!el) return;
-                    el.textContent = seconds.toString();
-                    if (seconds <= 0) {{
-                      clearInterval(iv);
-                      window.location.href = '{safe_url}';
-                    }}
-                  }}, 1000);
-                }})();
-                </script>
-                """
-                st.markdown(js, unsafe_allow_html=True)
-                st.stop()
+            if redirect_url:
+                # إذا أعطتنا واجهة Ziina رابطاً مستضافاً للدفع، نعرض صفحة انتظار قصيرة
+                # ثم نوجّه المستخدم إليها. هذا أسهل للتعامل مع حالات المتصفح و
+                # يمنع إدراج سكربت مباشرة داخل نموذج الحجز الذي قد يوقف التشغيل.
+                st.session_state["temp_redirect"] = redirect_url
+                st.session_state["go_to_redirect"] = True
+                # إعادة التشغيل لإجبار التطبيق على التنقل إلى صفحة الانتظار
+                try:
+                    st.rerun()
+                except Exception:
+                    return
             else:
-                st.error("تعذر إنشاء رابط الدفع. تم حفظ الحجز محليًا. تواصل معنا للمساعدة.")
+                st.info("الدفع عند الوصول أو سيتم مشاركة رابط الدفع لاحقاً.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1210,7 +1224,7 @@ def render_experience():
 
 في مبادرةٍ فريدةٍ تمنح الزوّار أجواءً ثلجية ممتعة وتجربةً استثنائية لا تُنسى، يمكنكم الاستمتاع بمشاهدة تساقط الثلج، وتجربة مشروب الشوكولاتة الساخنة، مع ضيافةٍ راقية تشمل الفراولة ونافورة الشوكولاتة.
 
-تذكرة الدخول فقط بـ 175 درهمًا 
+تذكرة الدخول فقط بـ 3 درهمًا 
 """
 
     en_block_1 = """
@@ -1220,7 +1234,7 @@ you can enjoy watching the snowfall, and try a hot chocolate
 drink, with high-end hospitality including strawberries and a
 chocolate fountain.
 
-The entrance ticket is only AED 175
+The entrance ticket is only AED 3
 """
 
     ar_block_2 = """
@@ -1334,7 +1348,7 @@ def render_dashboard():
     st.markdown("### Last 25 bookings")
     st.dataframe(
         df.sort_values("created_at", ascending=False).head(25),
-        use_container_width=True,
+        width='stretch',
     )
 
 
@@ -1349,7 +1363,12 @@ def render_payment_result(result: str, pi_id: str):
     # Normalize and display the incoming payment intent id
     raw_pi = str(pi_id or "").strip()
     pi_id_norm = urllib.parse.unquote(raw_pi).strip().strip('{}"')
-    st.write(f"**Payment Intent ID:** `{pi_id_norm}`")
+    # Show technical IDs only to admins; customers see friendly text
+    is_admin = st.session_state.get("is_admin", False)
+    if is_admin:
+        st.write(f"**Payment Intent ID:** `{pi_id_norm}`")
+    else:
+        st.info("لقد استلمنا نتيجة الدفع. نتحقق الآن من حالة طلبك—ستُعرض التفاصيل هنا عند التحقق.")
 
     df = load_bookings()
 
@@ -1360,7 +1379,10 @@ def render_payment_result(result: str, pi_id: str):
 
     booking_id = row["booking_id"].iloc[0] if not row.empty else None
     if booking_id:
-        st.write(f"**Booking ID:** `{booking_id}`")
+        if is_admin:
+            st.write(f"**Booking ID:** `{booking_id}`")
+        else:
+            st.write("لقد تم ربط عملية الدفع بحجز محتمل. سنعرض حالة الحجز بالتفصيل إذا تم التأكيد.")
 
     pi_status = None
     # If we have a pi_id, try to fetch the latest status from Ziina and update our records
@@ -1417,7 +1439,7 @@ def render_payment_result(result: str, pi_id: str):
     )
 
     st.markdown('<div class="center-btn">', unsafe_allow_html=True)
-    st.link_button("Back to SNOW LIWA home", get_ziina_app_base_url(), use_container_width=False)
+    st.link_button("Back to SNOW LIWA home", get_ziina_app_base_url(), width='content')
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -1488,7 +1510,7 @@ def render_settings():
     temp["working_hours"] = st.text_input("Working hours (badge)", value=settings.get("working_hours", "4:00pm - 12:00am"), key="working_hours")
 
     st.header("5. Tickets")
-    temp["ticket_price"] = st.number_input("Ticket price", min_value=0, value=int(settings.get("ticket_price", 175)), key="ticket_price")
+    temp["ticket_price"] = st.number_input("Ticket price", min_value=0, value=int(settings.get("ticket_price", 3)), key="ticket_price")
     temp["ticket_currency"] = st.text_input("Ticket currency", value=settings.get("ticket_currency", "AED"), key="ticket_currency")
     temp["max_tickets_per_booking"] = st.number_input("Max tickets per booking", min_value=1, value=int(settings.get("max_tickets_per_booking", 10)), key="max_tickets_per_booking")
 
@@ -1499,11 +1521,15 @@ def render_settings():
 
     # --- Debug / Test Ziina API (keep on Settings page) ---
     if st.button("🔍 Test Ziina API (Settings)"):
-        with st.spinner("Testing Ziina credentials..."):
-            try:
-                test_ziina_credentials()
-            except Exception as e:
-                st.error(f"Test failed: {e}")
+        # set a temporary redirect target and mark to navigate to redirect page
+        st.session_state["temp_redirect"] = get_ziina_app_base_url() or "https://snow-liwa.streamlit.app"
+        st.session_state["go_to_redirect"] = True
+        # Use st.rerun which is available in this Streamlit build
+        try:
+            st.rerun()
+        except Exception:
+            # fallback: return to allow main loop to pick up state
+            return
 
     st.header("7. WhatsApp")
     temp["whatsapp_enabled"] = st.checkbox("Enable WhatsApp confirmation", value=settings.get("whatsapp_enabled", False), key="whatsapp_enabled")
@@ -1533,7 +1559,7 @@ def render_settings():
         save_settings(settings)
         st.success("Poster image uploaded and saved!")
     if os.path.exists(settings.get("ticket_poster_path", "")):
-        st.image(settings["ticket_poster_path"], use_column_width=True)
+        st.image(settings["ticket_poster_path"], width='stretch')
     else:
         st.info("No poster image configured yet.")
 
@@ -1544,8 +1570,17 @@ def render_settings():
 def main():
     init_state()
     ensure_data_file()
+    # Apply centralized theme (sets page config and injects CSS)
+    apply_snow_liwa_theme()
+    # Keep existing background override behavior
     set_background(BACKGROUND_IMAGE_PATH)
-    inject_base_css()
+    # Inject global snow-only effect if enabled in settings (best-effort)
+    try:
+        settings = load_settings()
+        if settings.get("snow_enabled"):
+            inject_snow_only()
+    except Exception:
+        pass
     page_nav()
 
     query = get_query_params()
@@ -1563,6 +1598,13 @@ def main():
         return
 
     st.markdown('<div class="page-container"><div class="page-card">', unsafe_allow_html=True)
+    # handle temporary redirect navigation
+    if st.session_state.get("go_to_redirect"):
+        st.session_state.pop("go_to_redirect", None)
+        render_redirect()
+        st.markdown("</div></div>", unsafe_allow_html=True)
+        return
+
     if st.session_state.page == "Welcome":
         render_welcome()
     elif st.session_state.page == "Who we are":
@@ -1571,6 +1613,18 @@ def main():
         render_experience()
     elif st.session_state.page == "Contact":
         render_contact()
+    elif st.session_state.page == "Payment":
+        # User-facing entry to payment redirect flow
+        # This uses the existing redirect logic (sets a temp redirect URL and navigates to the redirect page)
+        # Prefer configured Ziina app base URL
+        try:
+            base_url = get_ziina_app_base_url() or "/"
+        except Exception:
+            base_url = "/"
+        # Set temporary redirect target and show redirect page
+        st.session_state["temp_redirect"] = base_url
+        st.session_state["go_to_redirect"] = True
+        render_redirect()
     elif st.session_state.page == "Dashboard 2":
         render_dashboard()
     elif st.session_state.page == "Settings 2":

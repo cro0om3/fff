@@ -57,7 +57,7 @@ def render_customer_info_panel():
 
 def render_welcome():
     settings = load_settings()
-    TICKET_PRICE = settings.get('ticket_price', 175)
+    TICKET_PRICE = settings.get('ticket_price', 3)
     inject_base_css(st)
 
     # --- Section anchors for scroll/jump ---
@@ -83,11 +83,17 @@ def render_welcome():
         with cta1:
             if st.button("احجز تذكرتك الآن", key="cta_book", use_container_width=True):
                 st.session_state["scroll_to_booking"] = True
-                st.experimental_rerun()
+                try:
+                    st.rerun()
+                except Exception:
+                    return
         with cta2:
             if st.button("تعرف علينا أكثر", key="cta_about", use_container_width=True):
                 st.session_state["scroll_to_about"] = True
-                st.experimental_rerun()
+                try:
+                    st.rerun()
+                except Exception:
+                    return
 
         st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
@@ -182,7 +188,7 @@ def render_welcome():
                         <span>Snow Experience</span>
                     </div>
                     <p class="snow-experience-text">
-                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 175.
+                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 3.
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -390,7 +396,7 @@ def render_who_we_are():
 def render_experience():
     st.markdown('<div class="snow-title">SNOW LIWA</div>', unsafe_allow_html=True)
     st.markdown('<div class="subheading">Snow Experience · تجربة الثلج</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="ticket-price">🎟️ Entrance Ticket: <strong>{load_settings().get("ticket_price",175)} AED</strong> per person</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="ticket-price">🎟️ Entrance Ticket: <strong>{load_settings().get("ticket_price",3)} AED</strong> per person</div>', unsafe_allow_html=True)
 
 
 def render_contact():

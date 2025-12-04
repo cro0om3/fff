@@ -31,7 +31,7 @@ HERO_IMAGE_PATH = BACKGROUND_IMAGE_PATH
 DATA_DIR = BASE_DIR / "data"
 BOOKINGS_FILE = DATA_DIR / "bookings.xlsx"
 
-TICKET_PRICE = 175  # AED per ticket
+TICKET_PRICE = 3  # AED per ticket
 
 
 # =========================
@@ -832,7 +832,7 @@ def render_welcome():
                         في مبادرةٍ فريدةٍ تمنح الزوّار أجواءً ثلجيةً ممتعة وتجربةً استثنائية لا تُنسى،
                         يمكنكم الاستمتاع بمشاهدة تساقُط الثلج، وتجربة مشروب الشوكولاتة الساخنة،
                         مع ضيافةٍ راقية تشمل الفراولة ونافورة الشوكولاتة.
-                        تذكرة الدخول فقط بـ ١٧٥ درهمًا.
+                        تذكرة الدخول فقط بـ ٣ درهمًا.
                     </p>
                 </div>
                 <div class="snow-experience-card english">
@@ -845,7 +845,7 @@ def render_welcome():
                         <span>Snow Experience</span>
                     </div>
                     <p class="snow-experience-text">
-                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 175.
+                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 3.
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1091,7 +1091,7 @@ def render_experience():
 
 في مبادرةٍ فريدةٍ تمنح الزوّار أجواءً ثلجية ممتعة وتجربةً استثنائية لا تُنسى، يمكنكم الاستمتاع بمشاهدة تساقط الثلج، وتجربة مشروب الشوكولاتة الساخنة، مع ضيافةٍ راقية تشمل الفراولة ونافورة الشوكولاتة.
 
-تذكرة الدخول فقط بـ 175 درهمًا 
+تذكرة الدخول فقط بـ 3 درهمًا 
 """
 
     en_block_1 = """
@@ -1101,7 +1101,7 @@ you can enjoy watching the snowfall, and try a hot chocolate
 drink, with high-end hospitality including strawberries and a
 chocolate fountain.
 
-The entrance ticket is only AED 175
+The entrance ticket is only AED 3
 """
 
     ar_block_2 = """
@@ -1350,7 +1350,7 @@ def render_settings():
     temp["working_hours"] = st.text_input("Working hours (badge)", value=settings.get("working_hours", "4:00pm - 12:00am"), key="working_hours")
 
     st.header("5. Tickets")
-    temp["ticket_price"] = st.number_input("Ticket price", min_value=0, value=int(settings.get("ticket_price", 175)), key="ticket_price")
+    temp["ticket_price"] = st.number_input("Ticket price", min_value=0, value=int(settings.get("ticket_price", 3)), key="ticket_price")
     temp["ticket_currency"] = st.text_input("Ticket currency", value=settings.get("ticket_currency", "AED"), key="ticket_currency")
     temp["max_tickets_per_booking"] = st.number_input("Max tickets per booking", min_value=1, value=int(settings.get("max_tickets_per_booking", 10)), key="max_tickets_per_booking")
 
