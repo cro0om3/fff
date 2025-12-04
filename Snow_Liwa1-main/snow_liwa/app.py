@@ -1,13 +1,17 @@
+import logging
 import base64
 from datetime import datetime
 from pathlib import Path
 import urllib.parse
 import os
+import json
+import html
 from settings_utils import load_settings
 
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 # =========================
 # BASIC CONFIG
@@ -37,7 +41,7 @@ TICKET_PRICE = 175  # AED per ticket
 # =========================
 # ZIINA CONFIG FROM SECRETS
 # =========================
-import logging
+
 
 def get_ziina_config():
     # Prefer st.secrets, fallback to legacy variables for compatibility
@@ -55,19 +59,24 @@ def get_ziina_config():
         test_mode = False
     return access_token, app_base_url, test_mode
 
+
 ZIINA_API_BASE = "https://api-v2.ziina.com/api"
+
 
 def get_ziina_access_token():
     access_token, _, _ = get_ziina_config()
     return access_token
 
+
 def get_ziina_app_base_url():
     _, app_base_url, _ = get_ziina_config()
     return app_base_url
 
+
 def get_ziina_test_mode():
     _, _, test_mode = get_ziina_config()
     return test_mode
+
 
 PAGES = {
     "Welcome": "welcome",
@@ -98,7 +107,8 @@ def ensure_data_file():
                 "total_amount",
                 "status",  # pending / paid / cancelled
                 "payment_intent_id",  # from Ziina
-                "payment_status",  # requires_payment_instrument / completed / failed...
+                # requires_payment_instrument / completed / failed...
+                "payment_status",
                 "redirect_url",  # Ziina hosted page
                 "notes",
             ]
@@ -162,17 +172,18 @@ def has_ziina_configured() -> bool:
     return bool(token) and token != "PUT_YOUR_ZIINA_ACCESS_TOKEN_IN_SECRETS"
 
 
-
 def create_payment_intent(amount_aed: float, booking_id: str, customer_name: str) -> dict | None:
     """Create Payment Intent via Ziina API and return JSON."""
     access_token = get_ziina_access_token()
     app_base_url = get_ziina_app_base_url()
     test_mode = get_ziina_test_mode()
     if not access_token:
-        st.error("Ziina API key is missing from st.secrets. Please add access_token under [ziina].")
+        st.error(
+            "Ziina API key is missing from st.secrets. Please add access_token under [ziina].")
         return None
 
-    amount_fils = int(round(amount_aed * 100))  # Ziina expects amount in fils (cents equivalent)
+    # Ziina expects amount in fils (cents equivalent)
+    amount_fils = int(round(amount_aed * 100))
     url = f"{ZIINA_API_BASE}/payment_intent"
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -193,7 +204,8 @@ def create_payment_intent(amount_aed: float, booking_id: str, customer_name: str
     }
     # Debug logging (mask token)
     logging.info(f"[ZIINA] POST {url}")
-    logging.info(f"[ZIINA] Headers: {{'Authorization': 'Bearer ***', 'Content-Type': 'application/json'}}")
+    logging.info(
+        f"[ZIINA] Headers: {{'Authorization': 'Bearer ***', 'Content-Type': 'application/json'}}")
     logging.info(f"[ZIINA] Payload: {payload}")
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=15)
@@ -217,7 +229,8 @@ def get_payment_intent(pi_id: str) -> dict | None:
     """Fetch payment intent from Ziina."""
     access_token = get_ziina_access_token()
     if not access_token:
-        st.error("Ziina API key is missing from st.secrets. Please add access_token under [ziina].")
+        st.error(
+            "Ziina API key is missing from st.secrets. Please add access_token under [ziina].")
         return None
     url = f"{ZIINA_API_BASE}/payment_intent/{pi_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -241,13 +254,16 @@ def get_payment_intent(pi_id: str) -> dict | None:
 # =========================
 # DEBUG/ADMIN: TEST ZIINA API
 # =========================
+
+
 def test_ziina_credentials():
     """Test Ziina API credentials by creating a dummy payment intent (does not create booking)."""
     access_token = get_ziina_access_token()
     app_base_url = get_ziina_app_base_url()
     test_mode = True  # Always test mode for this
     if not access_token:
-        st.error("Ziina API key is missing from st.secrets. Please add access_token under [ziina].")
+        st.error(
+            "Ziina API key is missing from st.secrets. Please add access_token under [ziina].")
         return
     url = f"{ZIINA_API_BASE}/payment_intent"
     headers = {
@@ -265,7 +281,8 @@ def test_ziina_credentials():
         "test": test_mode,
     }
     logging.info(f"[ZIINA-TEST] POST {url}")
-    logging.info(f"[ZIINA-TEST] Headers: {{'Authorization': 'Bearer ***', 'Content-Type': 'application/json'}}")
+    logging.info(
+        f"[ZIINA-TEST] Headers: {{'Authorization': 'Bearer ***', 'Content-Type': 'application/json'}}")
     logging.info(f"[ZIINA-TEST] Payload: {payload}")
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=15)
@@ -301,10 +318,10 @@ def sync_payments_from_ziina(df: pd.DataFrame) -> pd.DataFrame:
             # removed unused/incomplete line
 
         if status == "completed":
-            df.at[idx, "status"] = "paid"
+            df.loc[df.index == idx, "status"] = "paid"
             updated = True
         elif status in ("failed", "canceled"):
-            df.at[idx, "status"] = "cancelled"
+            df.loc[df.index == idx, "status"] = "cancelled"
             updated = True
 
     if updated:
@@ -332,7 +349,7 @@ def set_background(image_path: Path):
     css = f"""
     <style>
     .stApp {{
-        background: linear-gradient(180deg, {bg_color} 0%, #ffffff 60%, #fbe9d0 100%);
+        background: linear-gradient(180deg, {bg_color} 0%, #e7f5ff 45%, #fff1d6 75%, #f4c37a 100%);
         color: #18324a;
     }}
     </style>
@@ -340,75 +357,176 @@ def set_background(image_path: Path):
     st.markdown(css, unsafe_allow_html=True)
 
 
+def redirect_client_to_payment(url: str) -> None:
+    """Inject JavaScript that moves the browser to the hosted payment page."""
+    safe_url = json.dumps(url)
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            const target = {safe_url};
+            try {{
+                window.top.location.href = target;
+            }} catch (err) {{
+                window.location.href = target;
+            }}
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+
+
 def inject_base_css():
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Nunito:wght@300;400;600;700&family=Noto+Kufi+Arabic:wght@400;600;700&display=swap');
         :root {
-            --baby-blue: #eaf6ff;
-            --snow-white: #ffffff;
-            --desert-sand: #fbe9d0;
-            --accent-blue: #7ecbff;
-            --accent-gold: #e0b455;
-            --text-main: #18324a;
-            --glass-bg: rgba(255,255,255,0.55);
-            --glass-border: rgba(126,203,255,0.22);
+            --sl-bg: #f5fbff;
+            --sl-bg-soft: #ffffff;
+            --sl-accent: #4dafff;
+            --sl-accent-soft: #ffcf70;
+            --sl-text-main: #163046;
+            --sl-text-muted: #6b7b8c;
+            --sl-danger: #ff4b6b;
+            --sl-success: #10b981;
+            --sl-warning: #f59e0b;
+            --sl-radius-pill: 999px;
+            --sl-radius-lg: 26px;
+            --sl-shadow-soft: 0 14px 40px rgba(7, 36, 63, 0.10);
         }
-        html { font-size: 70%; }
-        * { font-family: 'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif; }
-        body { color: var(--text-main); }
-        .stApp {
-            background: linear-gradient(180deg, var(--baby-blue) 0%, var(--snow-white) 60%, var(--desert-sand) 100%);
-            color: var(--text-main);
+        html { font-size: 15px; }
+        *, ::before, ::after { box-sizing: border-box; }
+        body, .stApp {
+            font-family: 'Inter', 'Noto Kufi Arabic', 'SF Pro Display', system-ui, -apple-system, sans-serif;
+            background: radial-gradient(circle at top right, #ffffff 0%, #e4f3ff 45%, #fff1d6 85%, #f2bc6d 125%);
+            color: var(--sl-text-main);
+        }
+        a, a:visited {
+            color: inherit;
+            text-decoration: none;
+        }
+        a:hover, a:focus {
+            text-decoration: none;
+        }
+        * {
+            font-family: 'Inter', 'Noto Kufi Arabic', 'SF Pro Display', system-ui, -apple-system, sans-serif;
+        }
+        .arabic-text {
+            direction: rtl;
+            text-align: right;
+        }
+        .english-text {
+            direction: ltr;
+            text-align: left;
+            font-family: 'Nunito', system-ui, sans-serif;
+        }
+        @supports (scrollbar-color: transparent transparent) {
+            * {
+                scrollbar-width: thin;
+                scrollbar-color: transparent transparent;
+            }
+        }
+        .stApp { padding: 0; }
+        .main .block-container {
+            padding-top: 1.5rem;
+            padding-bottom: 3rem;
         }
         .page-container {
-            max-width: 1180px;
+            max-width: 1150px;
             margin: 0 auto;
-            padding: 0.8rem 0.75rem 1.6rem;
+            padding: 0 1.1rem 2.8rem;
         }
         .page-card {
-            max-width: 1180px;
-            width: 100%;
-            background: var(--glass-bg);
-            box-shadow: 0 18px 48px rgba(126,203,255,0.10);
-            border: 1.5px solid var(--glass-border);
-            border-radius: 24px;
+            background: transparent;
+            border-radius: 0;
             padding: 0;
-            backdrop-filter: blur(10px);
+            border: none;
+            box-shadow: none;
         }
-        @media (max-width: 800px) {
-            .page-card { padding: 0; }
+        .section-spacer { height: 2.4rem; }
+        .landing-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.9rem 1.4rem;
+            border-radius: var(--sl-radius-lg);
+            background: rgba(255, 255, 255, 0.88);
+            box-shadow: var(--sl-shadow-soft);
+            border: 1px solid rgba(77, 175, 255, 0.18);
         }
-        .hero-card {
-            position: relative;
-            border-radius: 30px;
-            overflow: hidden;
-            min-height: 480px;
-            background-size: cover;
-            background-position: center;
-            box-shadow: 0 18px 48px rgba(126,203,255,0.18);
-            isolation: isolate;
-            background: var(--glass-bg);
-            border: 1.5px solid var(--glass-border);
+        .landing-logo {
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
         }
-        .sticker {
-            position: absolute;
-            z-index: 3;
-            font-size: 2.8rem;
-            opacity: 0.9;
-            filter: drop-shadow(0 6px 12px rgba(0,0,0,0.18));
-            pointer-events: none;
+        .landing-logo-mark {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--sl-accent), var(--sl-accent-soft));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 1.1rem;
+            box-shadow: 0 10px 26px rgba(77, 175, 255, 0.35);
         }
-        .sticker.kid { top: 62%; left: 12%; font-size: 3.1rem; }
-        .sticker.snowman { top: 24%; right: 14%; }
-        .sticker.deer { bottom: 12%; right: 30%; }
-        .sticker.mitten { top: 12%; left: 8%; }
-        .hero-layer {
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(180deg, rgba(255,255,255,0.0) 0%, var(--baby-blue) 100%);
-            z-index: 1;
+        .landing-logo-text-main {
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            font-size: 1.45rem;
+        }
+        .landing-logo-text-sub {
+            font-size: 0.78rem;
+            color: var(--sl-text-muted);
+        }
+        .landing-header-cta {
+            display: flex;
+            align-items: center;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            padding: 0.65rem 1.45rem;
+            border-radius: var(--sl-radius-pill);
+            text-decoration: none;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            background: linear-gradient(135deg, #ffe8b2, #f7b343);
+            color: #2b1b05 !important;
+            border: none;
+            box-shadow: 0 10px 26px rgba(211, 151, 49, 0.45);
+            transition: transform 0.15s ease, box-shadow 0.2s ease;
+        }
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 32px rgba(211, 151, 49, 0.55);
+        }
+        .btn.btn-outline {
+            background: linear-gradient(135deg, #fff4dc, #ffcf70);
+            color: #3d2a0b !important;
+            border: 1.5px solid rgba(247, 179, 67, 0.65);
+            box-shadow: 0 8px 22px rgba(211, 151, 49, 0.32);
+        }
+        .btn.btn-outline:hover {
+            background: linear-gradient(135deg, #ffe8b2, #f7b343);
+            color: #2b1b05 !important;
+            box-shadow: 0 14px 32px rgba(211, 151, 49, 0.55);
+        }
+        .hero-section {
+            margin-top: 1.2rem;
+            padding: 2.1rem 2rem;
+            border-radius: 32px;
+            background:
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.7), transparent 60%),
+                linear-gradient(145deg, #f5fbff 0%, rgba(255, 255, 255, 0.92) 40%, rgba(255, 233, 195, 0.95) 100%);
+            box-shadow: var(--sl-shadow-soft);
         }
         .hero-content {
             position: relative;
@@ -421,198 +539,392 @@ def inject_base_css():
             align-items: center;
             gap: 1.5rem;
             padding: 2.8rem 2rem;
-            color: var(--text-main);
+            color: var(--sl-text-main);
             text-align: center;
         }
-        .hero-nav {
-            display: flex;
-            gap: 1.8rem;
+        .hero-content p {
+            margin-bottom: 1.2rem;
+            font-size: 1.1rem;
+            max-width: 420px;
+        }
+        .hero-title-main {
+            font-size: 3.2rem;
             letter-spacing: 0.18em;
-            font-size: 0.9rem;
             text-transform: uppercase;
-            color: var(--accent-blue);
-        }
-        .hero-title {
-            font-size: 3.6rem;
-            line-height: 1.05;
-            letter-spacing: 0.18em;
+            color: var(--sl-accent);
             font-weight: 800;
-            color: var(--accent-blue);
-            text-shadow: 0 10px 24px rgba(126,203,255,0.14);
+            margin-bottom: 0.6rem;
         }
-        .hero-tags {
+        .hero-subtitle-main {
+            font-size: 1.6rem;
+            color: #18324a;
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            direction: rtl;
+        }
+        .snow-experience-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.5rem 1.05rem;
+            border-radius: var(--sl-radius-pill);
+            background: rgba(255, 207, 112, 0.3);
+            color: #b76b00;
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+        }
+        .snow-experience-pill-icon {
+            font-size: 1.25rem;
+        }
+        .hero-subtext {
+            font-size: 0.98rem;
+            color: var(--sl-text-muted);
+            line-height: 1.8;
+            margin-bottom: 0.6rem;
+            direction: rtl;
+            text-align: right;
+            width: 100%;
+        }
+        .hero-subtext.en {
+            direction: ltr;
+            text-align: left;
+            font-family: 'Nunito', system-ui, sans-serif;
+        }
+        .hero-cta-row {
             display: flex;
-            gap: 1rem;
             flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-top: 1.2rem;
+        }
+        .hero-cta-row .btn {
+            font-size: 0.95rem;
+        }
+        .hero-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-top: 1.4rem;
+            font-size: 0.82rem;
+            color: var(--sl-text-muted);
+        }
+        .badge-soft {
+            padding: 0.45rem 0.9rem;
+            border-radius: var(--sl-radius-pill);
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #e0e9f5;
+        }
+        .poster-box {
+            border-radius: 24px;
+            border: 1px dashed #cfdfee;
+            min-height: 220px;
+            background: radial-gradient(circle at top, #f3f9ff, #ffffff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 0.85rem;
+            color: var(--sl-text-muted);
+            font-size: 0.9rem;
+        }
+        .poster-box img, .ticket-poster-img {
+            max-width: 100%;
+            border-radius: 22px;
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.12);
+            display: block;
+        }
+        .landing-section {
+            background: var(--sl-bg-soft);
+            border-radius: var(--sl-radius-lg);
+            padding: 1.8rem 1.6rem;
+            box-shadow: var(--sl-shadow-soft);
+            border: 1px solid rgba(77, 175, 255, 0.08);
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            margin-bottom: 1rem;
+        }
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        .section-tag {
+            font-size: 0.78rem;
+            letter-spacing: 0.12em;
+            color: var(--sl-text-muted);
+        }
+        .section-body p {
+            margin: 0.45rem 0;
+            font-size: 1rem;
+            line-height: 1.9;
+            direction: rtl;
+            text-align: right;
+        }
+        .section-body p.en {
+            direction: ltr;
+            text-align: left;
+            font-family: 'Nunito', system-ui, sans-serif;
+            color: var(--sl-text-muted);
+        }
+        .pill-highlight {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.45rem 0.95rem;
+            border-radius: var(--sl-radius-pill);
+            background: rgba(255, 207, 112, 0.16);
+            color: var(--sl-danger);
+            font-weight: 600;
+            font-size: 0.92rem;
+            margin-bottom: 0.8rem;
+            direction: rtl;
+            text-align: right;
+        }
+        .ticket-card {
+            background: linear-gradient(135deg, #fdf8ee, #fff4dc);
+            border-radius: 24px;
+            padding: 1.4rem 1.6rem;
+            margin-top: 1.1rem;
+            box-shadow: 0 18px 38px rgba(243, 188, 96, 0.32);
+        }
+        .ticket-price {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 0.45rem;
+            color: #b76b00;
+        }
+        .steps-list {
+            list-style: none;
+            padding: 0;
+            margin: 0.8rem 0 0;
+            font-size: 0.95rem;
+            color: var(--sl-text-main);
+        }
+        .steps-list li {
+            margin-bottom: 0.35rem;
+            direction: rtl;
+            text-align: right;
+        }
+        .landing-booking {
+            background: rgba(255, 255, 255, 0.94);
+        }
+        .booking-form-wrapper {
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 22px;
+            padding: 1.4rem 1.2rem 1.6rem;
+            box-shadow: inset 0 0 0 1px rgba(77, 175, 255, 0.1);
+        }
+        .booking-form-wrapper h4 {
+            margin-bottom: 1.1rem;
+            font-size: 1.05rem;
+        }
+        .poster-card {
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 22px;
+            padding: 1.2rem;
+            box-shadow: inset 0 0 0 1px rgba(77, 175, 255, 0.08);
+            display: flex;
+            align-items: center;
             justify-content: center;
         }
-        .hero-pill {
-            background: rgba(255,255,255,0.92);
-            color: var(--accent-blue);
-            padding: 0.6rem 1.4rem;
-            border-radius: 999px;
-            font-weight: 700;
-            box-shadow: 0 10px 30px rgba(126,203,255,0.16);
-            letter-spacing: 0.08em;
+        .poster-card .ticket-poster-wrapper {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 1rem;
-            margin: 1.1rem 0 1.0rem 0;
+        .poster-card .ticket-poster-img {
+            max-height: 320px;
+            object-fit: contain;
         }
-        .info-card {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 18px;
-            padding: 1.1rem 1.25rem;
-            box-shadow: 0 12px 30px rgba(126,203,255,0.08);
-        }
-        .info-card h3 {
-            margin: 0 0 0.4rem 0;
-            font-size: 1.1rem;
-            letter-spacing: 0.08em;
-            color: var(--accent-blue);
-        }
-        .info-card p {
-            margin: 0;
-            color: #4f6077;
-            line-height: 1.5;
-        }
-        .section-card {
-            background: var(--snow-white);
-            border: 1px solid var(--glass-border);
-            border-radius: 18px;
-            padding: 1.4rem 1.4rem 1.2rem 1.4rem;
-            box-shadow: 0 14px 34px rgba(126,203,255,0.10);
-            margin-top: 1rem;
-        }
-        .snow-title {
-            text-align: center;
-            font-size: 3rem;
-            font-weight: 700;
-            letter-spacing: 0.30em;
-            margin-bottom: 0.4rem;
-            color: var(--accent-blue);
-        }
-        .subheading {
-            text-align: center;
+        div[data-testid="stTextInput"] input,
+        div[data-testid="stNumberInput"] input,
+        div[data-testid="stTextArea"] textarea {
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+            padding: 0.65rem 0.9rem;
             font-size: 0.95rem;
-            opacity: 0.8;
-            margin-bottom: 2rem;
+            background: #f8fbff;
+            transition: border 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
         }
+        div[data-testid="stTextArea"] textarea { min-height: 90px; }
+        div[data-testid="stTextInput"] input:focus,
+        div[data-testid="stNumberInput"] input:focus,
+        div[data-testid="stTextArea"] textarea:focus {
+            border-color: var(--sl-accent);
+            box-shadow: 0 0 0 1.5px rgba(77, 175, 255, 0.28);
+            background: #ffffff;
+        }
+        div[data-testid="stNumberInput"] label,
+        div[data-testid="stTextInput"] label,
+        div[data-testid="stTextArea"] label {
+            font-size: 0.88rem;
+            color: var(--sl-text-muted);
+        }
+        div[data-testid="stButton"] > button,
+        div[data-testid="stDownloadButton"] > button,
+        div[data-testid="stLinkButton"] > button {
+            border-radius: var(--sl-radius-pill);
+            padding: 0.7rem 1.6rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            border: none;
+            background: linear-gradient(135deg, var(--sl-accent-soft), #f7b343);
+            color: #2b1b05;
+            box-shadow: 0 10px 26px rgba(211, 151, 49, 0.45);
+            transition: transform 0.15s ease, box-shadow 0.2s ease;
+        }
+        div[data-testid="stButton"] > button[kind="secondary"] {
+            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            color: var(--sl-text-main);
+            box-shadow: 0 8px 20px rgba(7, 36, 63, 0.14);
+        }
+        div[data-testid="stButton"] > button:hover,
+        div[data-testid="stDownloadButton"] > button:hover,
+        div[data-testid="stLinkButton"] > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 32px rgba(211, 151, 49, 0.55);
+        }
+        div[data-testid="stButton"] > button:focus {
+            outline: 2px solid rgba(130, 190, 255, 0.55);
+        }
+        .activity-buttons > div[data-testid="stButton"] > button {
+            background: rgba(255, 255, 255, 0.92);
+            border: 1px solid rgba(190, 228, 255, 0.7);
+            color: #27a4ff;
+            box-shadow: 0 8px 20px rgba(0, 80, 156, 0.12);
+        }
+        .activity-buttons > div[data-testid="stButton"] > button:hover {
+            box-shadow: 0 12px 28px rgba(0, 80, 156, 0.16);
+        }
+        .faq-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            font-size: 0.98rem;
+            color: var(--sl-text-main);
+            direction: rtl;
+            text-align: right;
+        }
+        .faq-list li {
+            margin-bottom: 0.7rem;
+            line-height: 1.8;
+        }
+        .dual-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.8rem;
+        }
+        .dual-column .arabic,
         .arabic {
             direction: rtl;
             text-align: right;
             font-size: 1rem;
             line-height: 1.8;
         }
-        .english {
+        .dual-column .english {
             direction: ltr;
             text-align: left;
-            font-size: 0.98rem;
-            line-height: 1.7;
+            font-family: 'Nunito', system-ui, sans-serif;
+            color: var(--sl-text-muted);
+            line-height: 1.9;
         }
-        .dual-column {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2.25rem;
-        }
-        @media (max-width: 800px) {
-            .dual-column { grid-template-columns: 1fr; }
-            .hero-card { min-height: 360px; }
-            .hero-title { font-size: 2.6rem; }
-            .hero-nav { gap: 0.7rem; font-size: 0.78rem; }
-            .hero-content { padding: 2rem 1.2rem; gap: 1rem; }
-        }
-        .ticket-price {
-            font-size: 1.2rem;
+        .snow-title {
+            text-align: center;
+            font-size: 2.4rem;
             font-weight: 700;
-            margin-top: 1rem;
-            color: var(--accent-gold);
+            letter-spacing: 0.24em;
+            margin-bottom: 0.6rem;
+            color: var(--sl-accent);
         }
-        .stButton>button {
-            border-radius: 999px;
-            padding: 0.7rem 1.6rem;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            background: linear-gradient(120deg, var(--accent-gold), #ffe9b0);
-            color: #18324a;
-            border: none;
-            box-shadow: 0 10px 30px rgba(224,180,85,0.18);
-            transition: transform 0.15s ease, box-shadow 0.2s ease;
-        }
-        .stButton>button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 16px 32px rgba(126,203,255,0.22);
-        }
-        .stButton>button:focus {
-            outline: 2px solid var(--accent-blue);
+        .subheading {
+            text-align: center;
+            font-size: 1rem;
+            color: var(--sl-text-muted);
+            margin-bottom: 2rem;
         }
         .center-btn {
             display: flex;
             justify-content: center;
-            margin-top: 0.5rem;
-            margin-bottom: 0.5rem;
+            margin-top: 0.6rem;
         }
         .footer-note {
             text-align: center;
-            font-size: 0.8rem;
-            opacity: 0.75;
+            font-size: 0.82rem;
+            color: var(--sl-text-muted);
             margin-top: 1.5rem;
         }
-        .snow-experience-card {
-            width: 100%;
-            background: radial-gradient(circle at top, #FFFFFF 0%, #F6FBFF 55%, #EDF6FF 100%);
-            border-radius: 32px;
-            padding: 2.4rem 2.2rem 2.6rem;
-            box-shadow: 0 20px 45px rgba(0, 72, 140, 0.10);
-            box-sizing: border-box;
-            direction: rtl;
+        .payment-container {
+            max-width: 620px;
+            margin: 0 auto;
+            background: var(--sl-bg-soft);
+            border-radius: var(--sl-radius-lg);
+            padding: 2.2rem 1.8rem;
+            box-shadow: var(--sl-shadow-soft);
+            border: 1px solid rgba(77, 175, 255, 0.12);
             text-align: center;
-            position: relative;
-            overflow: hidden;
         }
-
-        .snow-experience-small-title {
-            position: absolute;
-            top: 1.6rem;
-            left: 2.2rem;
-            font-size: 14px;
+        .payment-logo-title {
+            font-size: 1.8rem;
             font-weight: 700;
-            letter-spacing: 0.25em;
-            text-transform: uppercase;
-            color: #76B4FF;
-            direction: ltr;
+            letter-spacing: 0.14em;
+            color: var(--sl-accent);
+            margin-bottom: 0.4rem;
         }
-
-        .snow-experience-pill {
+        .payment-subtitle {
+            font-size: 0.95rem;
+            color: var(--sl-text-muted);
+            margin-bottom: 1.2rem;
+        }
+        .status-box {
+            padding: 1.6rem;
+            border-radius: 18px;
+            margin-bottom: 1.4rem;
+            border: 1px solid rgba(77, 175, 255, 0.16);
+        }
+        .status-box.success { background: #d1fae5; border-color: var(--sl-success); }
+        .status-box.error { background: #fee2e2; border-color: var(--sl-danger); }
+        .status-box.warning { background: #fef3c7; border-color: var(--sl-warning); }
+        .status-box.info { background: #dbeafe; border-color: var(--sl-accent); }
+        .status-icon { font-size: 2.8rem; margin-bottom: 0.6rem; }
+        .status-message { font-size: 1.15rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .status-details { font-size: 0.95rem; color: var(--sl-text-muted); line-height: 1.7; }
+        .payment-info-row { font-size: 0.9rem; margin: 0.35rem 0; color: var(--sl-text-muted); }
+        .payment-footer { font-size: 0.85rem; color: var(--sl-text-muted); margin-top: 1.2rem; }
+        .payment-actions { margin-top: 1.2rem; display: flex; flex-direction: column; gap: 0.75rem; }
+        .payment-actions a {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
-            padding: 0.55rem 1.3rem;
-            border-radius: 999px;
-            border: 1px solid #BEE4FF;
-            background: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 10px 25px rgba(0, 80, 156, 0.09);
-            font-size: 18px;
+            justify-content: center;
+            padding: 0.85rem 1.8rem;
+            border-radius: var(--sl-radius-pill);
+            text-decoration: none;
             font-weight: 700;
-            color: #27A4FF;
-            margin-bottom: 1.4rem;
-            margin-top: 0.4rem;
+            color: #ffffff;
+            background: linear-gradient(135deg, #10b981, #059669);
+            box-shadow: 0 12px 30px rgba(16, 185, 129, 0.36);
         }
-
-        .snow-experience-pill-icon {
-            font-size: 20px;
+        .payment-actions a.secondary {
+            background: linear-gradient(135deg, var(--sl-accent-soft), #f7b343);
+            color: #2b1b05;
+            box-shadow: 0 10px 26px rgba(211, 151, 49, 0.45);
         }
-
-        .snow-experience-text {
-            max-width: 520px;
-            margin: 0 auto;
-            font-size: 16px;
-            line-height: 1.9;
-            color: #234266;
-            font-weight: 500;
+        @media (max-width: 900px) {
+            .landing-header { flex-direction: column; align-items: flex-start; }
+            .hero-section { padding: 1.6rem 1.4rem; }
+            .hero-title-main { text-align: center; font-size: 2.4rem; letter-spacing: 0.12em; }
+            .hero-subtitle-main { text-align: center; font-size: 1.3rem; }
+            .hero-subtext, .hero-subtext.en { text-align: center; }
+            .landing-header-cta { width: 100%; }
+            .landing-header-cta .btn { width: 100%; justify-content: center; }
+            .hero-cta-row { justify-content: center; }
+            .hero-badges { justify-content: center; }
+            .snow-experience-pill { justify-content: center; }
+            .dual-column { grid-template-columns: 1fr; }
         }
         </style>
         """,
@@ -630,8 +942,10 @@ def page_nav():
         st.title("SNOW LIWA")
         nav = st.radio(
             "Navigation",
-            ["Welcome", "Who we are", "Experience", "Contact", "Dashboard", "Settings"],
-            index=["Welcome", "Who we are", "Experience", "Contact", "Dashboard", "Settings"].index(st.session_state.page) if st.session_state.page in ["Welcome", "Who we are", "Experience", "Contact", "Dashboard", "Settings"] else 0,
+            ["Welcome", "Who we are", "Experience",
+                "Contact", "Dashboard", "Settings"],
+            index=["Welcome", "Who we are", "Experience", "Contact", "Dashboard", "Settings"].index(
+                st.session_state.page) if st.session_state.page in ["Welcome", "Who we are", "Experience", "Contact", "Dashboard", "Settings"] else 0,
             key="sidebar_nav_radio",
         )
         st.session_state.page = nav
@@ -662,302 +976,285 @@ def _normalize_query_value(value):
 # =========================
 
 
-
 def render_customer_info_panel():
-    # Customer info panel with tabs, styled as a card
-    st.markdown('<div class="section-card" style="margin-top:1.5rem;">', unsafe_allow_html=True)
-    tabs = st.tabs(["من نحن؟", "موقعنا", "سياسة الحجز", "الأسئلة الشائعة"])
-    with tabs[0]:
-        st.markdown(
-            '<div style="direction:rtl; text-align:right; font-size:1.05rem; line-height:1.8;">'
-            'مشروع شبابي إماراتي من قلب منطقة الظفرة.<br>'
-            'يقدم تجربة شتوية فريدة تجمع بين أجواء ليوا الساحرة ولمسات من البساطة والجمال.'
-            '<br><br>'
-            '# TODO: insert FHD\'s final about-us text here'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with tabs[1]:
-        st.markdown(
-            '<div style="direction:rtl; text-align:right; font-size:1.05rem; line-height:1.8;">'
-            'سيتم مشاركة موقع Snow Liwa بالتفصيل بعد تأكيد الحجز عبر واتساب. 🗺️📍'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with tabs[2]:
-        st.markdown(
-            (
-                '<div style="direction:rtl; text-align:right; font-size:1.05rem; line-height:1.8;">'
-                '<ul style="padding-right:1.2em;">'
-                '<li>التذكرة صالحة للاستخدام في اليوم المحدد فقط.</li>'
-                '<li>بعد تأكيد الحجز لا يمكن استرجاع المبلغ.</li>'
-                '<li>يمكنكم تعديل وقت الزيارة بالتواصل معنا قبل 24 ساعة.</li>'
-                '</ul>'
-                '</div>'
-            ),
-            unsafe_allow_html=True,
-        )
-    with tabs[3]:
-        st.markdown(
-            '<div style="direction:rtl; text-align:right; font-size:1.05rem; line-height:1.8;">'
-            '<b>هل يمكنني استرجاع المبلغ بعد الحجز؟</b><br>لا، بعد تأكيد الحجز لا يمكن استرجاع المبلغ.<br><br>'
-            '<b>كيف أحصل على موقع Snow Liwa؟</b><br>سيتم إرسال الموقع عبر واتساب بعد تأكيد الحجز.<br><br>'
-            '<b>هل يمكن تعديل وقت الزيارة؟</b><br>نعم، بالتواصل معنا قبل 24 ساعة من الموعد المحدد.<br><br>'
-            '<b>هل التذكرة تشمل جميع الأنشطة؟</b><br>نعم، التذكرة تشمل جميع الأنشطة المتوفرة في اليوم المحدد.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="landing-section">
+            <div class="section-header">
+                <div class="section-title">أسئلة شائعة</div>
+                <div class="section-tag">FAQ</div>
+            </div>
+            <ul class="faq-list">
+                <li><strong>هل المكان مناسب للعائلات؟</strong> نعم، SNOW LIWA مخصص للعائلات والشباب مع أجواء آمنة وممتعة.</li>
+                <li><strong>هل يجب الحجز مسبقًا؟</strong> نعم، احجز وادفع أونلاين عبر موقعنا لتضمن مكانك وتحصل على تذكرتك فوراً.</li>
+                <li><strong>أين موقعكم؟</strong> الموقع سري 🫣 – سيتم إرسال اللوكيشن بالتفصيل بعد تأكيد الدفع عبر الواتساب.</li>
+                <li><strong>هل يمكن تعديل وقت الزيارة؟</strong> نعم، بالتواصل معنا قبل 24 ساعة من الموعد المحدد.</li>
+                <li><strong>هل التذكرة قابلة للاسترجاع؟</strong> بعد تأكيد الحجز لا يمكن استرجاع المبلغ، ويمكن إعادة جدولة الموعد عند الحاجة.</li>
+            </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def render_welcome():
-    settings = st.session_state.get("settings", {})
-    bg_img_path = settings.get("background_image_path")
-    bg_brightness = settings.get("background_brightness", 1.0)
-    bg_blur = settings.get("background_blur", 0)
-    bg_opacity = settings.get("background_opacity", 1.0)
-    hero_img_path = settings.get("hero_image_path")
-    hero_side = settings.get("hero_side", "left")
-    hero_card_size = settings.get("hero_card_size", "medium")
-    accent_color = settings.get("accent_color", "snow_blue")
-    theme_mode = settings.get("theme_mode", "light")
-    hero_subtitle = settings.get("hero_subtitle", "تجربة شتوية في قلب الظفرة")
-    hero_intro_paragraph = settings.get("hero_intro_paragraph", "مشروع شبابي إماراتي يقدم أجواء ليوا الشتوية للعائلات والشباب، من لعب الثلج إلى الشوكولاتة الساخنة.")
+    session_settings = st.session_state.get("settings", {}) or {}
+    stored_settings = load_settings() or {}
+    settings = {**stored_settings, **session_settings}
 
-    # --- Section anchors for scroll/jump ---
+    hero_subtitle = settings.get("hero_subtitle", "تجربة شتوية في قلب الظفرة")
+    hero_intro_ar = settings.get(
+        "hero_intro_paragraph",
+        "مشروع شبابي إماراتي يقدم أجواء شتوية للعائلات والشباب، من لعب الثلج إلى الشوكولاتة الساخنة."
+    )
+    hero_intro_en = settings.get(
+        "hero_intro_paragraph_en",
+        "Emirati youth project offering a cozy winter experience in the heart of Al Dhafra, mixing the charm of Liwa desert with snow, hot chocolate and warm hospitality."
+    )
+
+    ticket_price_value = float(settings.get("ticket_price", TICKET_PRICE))
+    ticket_currency = settings.get("ticket_currency", "AED")
+    max_tickets = int(settings.get("max_tickets_per_booking", 20))
+
+    working_days = settings.get("working_days", "كل أيام الأسبوع")
+    working_hours = settings.get("working_hours", "4:00pm - 12:00am")
+    location_label = settings.get(
+        "location_label", "الموقع: منطقة الظفرة – ليوا")
+    family_label = settings.get("family_label", "مناسب للعائلات والأطفال")
+
+    hero_image_path = settings.get("hero_image_path")
+    poster_path = settings.get(
+        "ticket_poster_path", "assets/ticket_poster.png")
+
+    # Anchors for navigation
     booking_anchor = st.empty()
     about_anchor = st.empty()
 
-    # --- HERO LAYOUT ---
-    col1, col2 = st.columns([1.15, 1], gap="large")
-    with col1:
-        st.markdown(f"""
-        <div class='hero-content' style='align-items: flex-start; text-align: right;'>
-            <div style='margin-bottom: 0.5rem;'></div>
-            <div class='hero-title' style='font-size:3.2rem; letter-spacing:0.18em; color:var(--accent-blue); font-weight:800;'>SNOW LIWA</div>
-            <div style='font-size:1.6rem; color:#18324a; font-weight:600; margin-bottom:0.2rem;'>تجربة شتوية في قلب الظفرة</div>
-            <div class='arabic' style='margin-bottom:1.2rem; font-size:1.1rem; max-width:420px;'>
-                مشروع شبابي إماراتي يقدم أجواء ليوا الشتوية للعائلات والشباب، من لعب الثلج إلى الشوكولاتة الساخنة.
+    # Header
+    st.markdown(
+        """
+        <div class="landing-header">
+            <div class="landing-logo">
+                <div class="landing-logo-mark">SL</div>
+                <div>
+                    <div class="landing-logo-text-main">SNOW LIWA</div>
+                    <div class="landing-logo-text-sub arabic-text">تجربة الثلج في قلب ليوا</div>
+                </div>
+            </div>
+            <div class="landing-header-cta">
+                <a class="btn btn-primary" href="#booking_section">🎟️ احجز تذكرتك الآن</a>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
-        # --- CTAs ---
-        cta1, cta2 = st.columns([1.2, 1.1], gap="small")
-        with cta1:
-            if st.button("احجز تذكرتك الآن", key="cta_book", use_container_width=True):
-                st.session_state["scroll_to_booking"] = True
-                st.rerun()
-        with cta2:
-            if st.button("تعرف علينا أكثر", key="cta_about", use_container_width=True):
-                st.session_state["scroll_to_about"] = True
-                st.rerun()
+    st.markdown("<div class='section-spacer' style='height:1.6rem'></div>",
+                unsafe_allow_html=True)
 
-        st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
+    # Hero
+    st.markdown("<div class='hero-section'>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1.2, 1], gap="large")
+    with col1:
+        badges = [
+            "❄️ Snow Experience",
+            f"🕒 {working_hours}",
+            f"📍 {location_label}",
+            f"👨‍👩‍👧‍👦 {family_label}",
+        ]
+        badge_html = "".join(
+            f"<span class='badge-soft'>{badge}</span>" for badge in badges if badge)
+        st.markdown(
+            f"""
+            <div class="hero-content">
+                <div class="hero-title-main">SNOW LIWA</div>
+                <div class="hero-subtitle-main arabic-text">{hero_subtitle}</div>
+                <div class="snow-experience-pill">
+                    <span class="snow-experience-pill-icon">❄️</span>
+                    <span>تجربة الثلج</span>
+                </div>
+                <p class="hero-subtext arabic-text">{hero_intro_ar}</p>
+                <p class="hero-subtext en english-text">{hero_intro_en}</p>
+                <div class="hero-cta-row">
+                    <a class="btn btn-primary" href="#booking_section">احجز تذكرتك الآن</a>
+                    <a class="btn btn-outline" href="#about_section">تعرف علينا أكثر</a>
+                </div>
+                <div class="hero-badges">{badge_html}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        # --- ICE SKATING / SLADDING pills ---
-        pill1, pill2 = st.columns([1,1], gap="small")
+        st.markdown(
+            "<div class='section-spacer' style='height:1.2rem'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='activity-buttons'>", unsafe_allow_html=True)
+        pill1, pill2 = st.columns(2, gap="small")
         with pill1:
             if st.button("ICE SKATING", key="ice_skating_pill", use_container_width=True):
                 st.session_state["selected_activity"] = "ice_skating"
         with pill2:
             if st.button("SLADDING", key="sladding_pill", use_container_width=True):
                 st.session_state["selected_activity"] = "sladding"
+        st.markdown("</div>", unsafe_allow_html=True)
 
-        with col2:
-                # Custom snow experience cards: Arabic and English
-                st.markdown("""
-                <style>
-                .snow-experience-card {
-                        width: 100%;
-                        background: radial-gradient(circle at top, #FFFFFF 0%, #F6FBFF 55%, #EDF6FF 100%);
-                        border-radius: 32px;
-                        padding: 2.4rem 2.2rem 2.6rem;
-                        box-shadow: 0 20px 45px rgba(0, 72, 140, 0.10);
-                        box-sizing: border-box;
-                        text-align: center;
-                        position: relative;
-                        overflow: hidden;
-                        margin-bottom: 1.2rem;
-                }
-                .snow-experience-card.arabic { direction: rtl; }
-                .snow-experience-card.english { direction: ltr; }
-                .snow-experience-small-title {
-                        position: absolute;
-                        top: 1.6rem;
-                        left: 2.2rem;
-                        font-size: 14px;
-                        font-weight: 700;
-                        letter-spacing: 0.25em;
-                        text-transform: uppercase;
-                        color: #76B4FF;
-                        direction: ltr;
-                }
-                .snow-experience-pill {
-                        display: inline-flex;
-                        align-items: center;
-                        gap: 0.5rem;
-                        padding: 0.55rem 1.3rem;
-                        border-radius: 999px;
-                        border: 1px solid #BEE4FF;
-                        background: rgba(255, 255, 255, 0.95);
-                        box-shadow: 0 10px 25px rgba(0, 80, 156, 0.09);
-                        font-size: 18px;
-                        font-weight: 700;
-                        color: #27A4FF;
-                        margin-bottom: 1.4rem;
-                        margin-top: 0.4rem;
-                }
-                .snow-experience-pill-icon {
-                        font-size: 20px;
-                }
-                .snow-experience-text {
-                        max-width: 520px;
-                        margin: 0 auto;
-                        font-size: 16px;
-                        line-height: 1.9;
-                        color: #234266;
-                        font-weight: 500;
-                }
-                </style>
-                <div class="snow-experience-card arabic">
-                    <div class="snow-experience-small-title">
-                        SNOW LIWA
+    with col2:
+        hero_image = hero_image_path if hero_image_path and os.path.exists(
+            hero_image_path) else None
+        poster_image = poster_path if poster_path and os.path.exists(
+            poster_path) else None
+        image_path = hero_image or poster_image
+        if image_path:
+            try:
+                img_bytes = Path(image_path).read_bytes()
+                img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+                st.markdown(
+                    f"""
+                    <div class="poster-box">
+                        <img src="data:image/png;base64,{img_b64}" alt="SNOW LIWA" />
                     </div>
-                    <div style="margin-top: 1.2rem;"></div>
-                    <div class="snow-experience-pill">
-                        <span class="snow-experience-pill-icon">❄️</span>
-                        <span>تجربة الثلج</span>
-                    </div>
-                    <p class="snow-experience-text">
-                        في مبادرةٍ فريدةٍ تمنح الزوّار أجواءً ثلجيةً ممتعة وتجربةً استثنائية لا تُنسى،
-                        يمكنكم الاستمتاع بمشاهدة تساقُط الثلج، وتجربة مشروب الشوكولاتة الساخنة،
-                        مع ضيافةٍ راقية تشمل الفراولة ونافورة الشوكولاتة.
-                        تذكرة الدخول فقط بـ ١٧٥ درهمًا.
-                    </p>
-                </div>
-                <div class="snow-experience-card english">
-                    <div class="snow-experience-small-title">
-                        SNOW LIWA
-                    </div>
-                    <div style="margin-top: 1.2rem;"></div>
-                    <div class="snow-experience-pill">
-                        <span class="snow-experience-pill-icon">❄️</span>
-                        <span>Snow Experience</span>
-                    </div>
-                    <p class="snow-experience-text">
-                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 175.
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
+                    """,
+                    unsafe_allow_html=True,
+                )
+            except Exception:
+                st.markdown(
+                    "<div class='poster-box'>Poster image placeholder – ضع صورة SNOW LIWA هنا</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.markdown(
+                "<div class='poster-box'>Poster image placeholder – ضع صورة SNOW LIWA هنا</div>",
+                unsafe_allow_html=True,
+            )
 
-    # --- SCROLL/JUMP LOGIC ---
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Scroll anchors using session flags if set
     if st.session_state.get("scroll_to_booking"):
         st.session_state.pop("scroll_to_booking")
         booking_anchor.empty()
         st.markdown("<div id='booking_section'></div>", unsafe_allow_html=True)
-        st.write("")  # force scroll
+        st.write("")
     if st.session_state.get("scroll_to_about"):
         st.session_state.pop("scroll_to_about")
         about_anchor.empty()
         st.markdown("<div id='about_section'></div>", unsafe_allow_html=True)
         st.write("")
 
-    # --- BOOKING SECTION (anchor for scroll) ---
-    booking_anchor.markdown('<div id="booking_section"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-card">', unsafe_allow_html=True)
-    st.markdown("### 🎟️ Book your ticket")
-    st.write(f"Entrance ticket: **{TICKET_PRICE} AED** per person.")
+    st.markdown("<div class='section-spacer'></div>", unsafe_allow_html=True)
 
-    # Pre-select activity if chosen in hero
-    selected_activity = st.session_state.get("selected_activity")
-    activity_options = ["ice_skating", "sladding"]
-    activity_labels = {"ice_skating": "Ice Skating", "sladding": "Sladding"}
-    if selected_activity in activity_options:
-        st.info(f"تم اختيار النشاط: {activity_labels[selected_activity]}")
+    # Experience section
+    total_price_text = f"{ticket_price_value:,.0f} {ticket_currency}"
+    st.markdown(
+        f"""
+        <div class="landing-section" id="experience_section">
+            <div class="section-header">
+                <div class="section-title">تجربة الثلج ❄️</div>
+                <div class="section-tag">SNOW EXPERIENCE</div>
+            </div>
+            <div class="section-body">
+                <p class="arabic-text">
+                    في مبادرةٍ فريدةٍ تمنح الزوّار أجواءً ثلجية ممتعة وتجربةً استثنائية لا تُنسى،
+                    يمكنكم الاستمتاع بمشاهدة تساقط الثلج، وتجربة مشروب الشوكولاتة الساخنة، مع ضيافةٍ
+                    راقية تشمل الفراولة ونافورة الشوكولاتة.
+                </p>
+                <p class="en english-text">
+                    In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional
+                    and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate
+                    drink, with high-end hospitality including strawberries and a chocolate fountain.
+                </p>
+                <div class="ticket-card">
+                    <div class="ticket-price">🎟️ Entrance ticket: {total_price_text} per person</div>
+                    <span class="pill-highlight">تذكرة الدخول فقط بـ {int(ticket_price_value)} درهمًا</span>
+                    <ul class="steps-list">
+                        <li>① املأ نموذج الحجز بالمعلومات المطلوبة.</li>
+                        <li>② ادفع أونلاين عبر Ziina ({int(ticket_price_value)} {ticket_currency} لكل شخص).</li>
+                        <li>③ استلم تذكرتك الإلكترونية مباشرة بعد الدفع.</li>
+                        <li>④ تواصل معنا على الواتساب لاستلام لوكيشن الموقع السري 🫣</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    # Load poster path from settings
-    settings = load_settings()
-    poster_path = settings.get("ticket_poster_path", "assets/ticket_poster.png")
+    st.markdown("<div class='section-spacer'></div>", unsafe_allow_html=True)
 
-    col_left, col_right = st.columns([3, 2])
+    # Booking section
+    booking_anchor.markdown(
+        '<div id="booking_section"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="landing-section landing-booking">',
+                unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="section-header">
+            <div class="section-title">إحجز تذكرتك الآن</div>
+            <div class="section-tag">Book your ticket</div>
+        </div>
+        <div class="pill-highlight">احجز الآن وادفع أونلاين – احصل على تذكرتك فوراً</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_left, col_right = st.columns([1.1, 0.9], gap="large")
 
     with col_left:
-        st.markdown('<div class="ticket-card">', unsafe_allow_html=True)
+        st.markdown('<div class="booking-form-wrapper">',
+                    unsafe_allow_html=True)
         with st.form("booking_form"):
             name = st.text_input("Name / الاسم الكامل")
             phone = st.text_input("Phone / رقم الهاتف (واتساب)")
-            tickets = st.number_input("Number of tickets / عدد التذاكر", 1, 20, 1)
-            notes = st.text_area("Notes (optional) / ملاحظات اختيارية", height=70)
-            # Optionally show activity selection if needed in future
-            submitted = st.form_submit_button("Confirm booking / إصدار التذكرة")
+            tickets = st.number_input(
+                "Number of tickets / عدد التذاكر",
+                min_value=1,
+                max_value=max_tickets,
+                value=1,
+            )
+            notes = st.text_area(
+                "Notes (optional) / ملاحظات اختيارية", height=80)
+            submitted = st.form_submit_button(
+                "Confirm booking / إصدار التذكرة")
         st.markdown('</div>', unsafe_allow_html=True)
 
+        selected_activity = st.session_state.get("selected_activity")
+        activity_labels = {
+            "ice_skating": "Ice Skating", "sladding": "Sladding"}
+        if selected_activity in activity_labels:
+            st.info(f"تم اختيار النشاط: {activity_labels[selected_activity]}")
+
     with col_right:
-        st.markdown('<div class="ticket-card ticket-card-poster">', unsafe_allow_html=True)
+        st.markdown('<div class="poster-card">', unsafe_allow_html=True)
         if poster_path and os.path.exists(poster_path):
-            with open(poster_path, "rb") as f:
-                img_bytes = f.read()
-            import base64
-            img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+            try:
+                img_bytes = Path(poster_path).read_bytes()
+                img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+                st.markdown(
+                    f"""
+                    <div class="ticket-poster-wrapper">
+                        <img src="data:image/png;base64,{img_b64}" class="ticket-poster-img" alt="SNOW LIWA Poster" />
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            except Exception:
+                st.markdown(
+                    "<div class='poster-box'>Poster image placeholder – ضع صورة SNOW LIWA هنا</div>",
+                    unsafe_allow_html=True,
+                )
+        else:
             st.markdown(
-                f'''
-                <div class="ticket-poster-wrapper">
-                    <img src="data:image/png;base64,{img_b64}" class="ticket-poster-img" />
-                </div>
-                ''',
+                "<div class='poster-box'>No poster image configured yet. Please upload one from Settings.</div>",
                 unsafe_allow_html=True,
             )
-        else:
-            st.write("No poster image configured yet. Please upload one from the Settings page.")
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Add CSS for card and image fit
-    st.markdown(
-        '''<style>
-        .ticket-card {
-            background: #FFFFFF;
-            border-radius: 24px;
-            padding: 1.8rem 1.6rem 2rem;
-            box-shadow: 0 20px 40px rgba(15, 72, 122, 0.08);
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            box-sizing: border-box;
-        }
-        .ticket-card-poster {
-            justify-content: center;
-        }
-        .ticket-poster-wrapper {
-            width: 100%;
-            height: 307px; /* fixed height requested */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0.5rem;
-            overflow: hidden;
-        }
-        .ticket-poster-img {
-            max-width: 100%;
-            max-height: 307px; /* ensure image never exceeds container */
-            width: auto;
-            height: auto;
-            object-fit: contain;
-            border-radius: 18px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-            display: block;
-            margin: 0 auto;
-        }
-        </style>''',
-        unsafe_allow_html=True
-    )
-
-    if "submitted" in locals() and submitted:
+    if submitted:
         if not name.strip() or not phone.strip():
             st.error("الرجاء إدخال الاسم ورقم الهاتف.")
         else:
             df = load_bookings()
             booking_id = get_next_booking_id(df)
-            total_amount = float(tickets) * TICKET_PRICE
+            total_amount = float(tickets) * ticket_price_value
 
             payment_intent_id = None
             payment_status = None
@@ -985,7 +1282,7 @@ def render_welcome():
                 "name": name,
                 "phone": phone,
                 "tickets": int(tickets),
-                "ticket_price": TICKET_PRICE,
+                "ticket_price": ticket_price_value,
                 "total_amount": total_amount,
                 "status": "paid" if payment_status == "completed" else "pending",
                 "payment_intent_id": payment_intent_id,
@@ -996,11 +1293,12 @@ def render_welcome():
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             save_bookings(df)
 
-            ticket_text = build_ticket_text(booking_id, name, phone, int(tickets), total_amount)
+            ticket_text = build_ticket_text(
+                booking_id, name, phone, int(tickets), total_amount)
             ticket_bytes = ticket_text.encode("utf-8")
 
             st.success(
-                f"تم إنشاء الحجز! رقم الحجز: **{booking_id}** والمبلغ **{total_amount:.2f} AED**. "
+                f"تم إنشاء الحجز! رقم الحجز: **{booking_id}** والمبلغ **{total_amount:.2f} {ticket_currency}**. "
                 "يمكنك تنزيل التذكرة أو إرسالها مباشرة."
             )
             cta_ticket, cta_wa = st.columns(2, gap="small")
@@ -1021,17 +1319,26 @@ def render_welcome():
                 )
 
             if redirect_url:
-                st.link_button("💳 إكمال الدفع (Ziina)", redirect_url, use_container_width=True)
+                if st.button("💳 إكمال الدفع (Ziina)", type="primary", use_container_width=True):
+                    redirect_client_to_payment(redirect_url)
+                st.markdown(
+                    f"<div class=\"footer-note\"><a href=\"{redirect_url}\" target=\"_blank\">فتح صفحة الدفع في نافذة جديدة</a></div>",
+                    unsafe_allow_html=True,
+                )
             else:
                 st.info("الدفع عند الوصول أو سيتم مشاركة رابط الدفع لاحقاً.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- INFO/ABOUT SECTION (anchor for scroll) ---
-    about_anchor.markdown('<div id="about_section"></div>', unsafe_allow_html=True)
+    st.markdown("<div class='section-spacer'></div>", unsafe_allow_html=True)
+
+    about_anchor.markdown('<div id="about_section"></div>',
+                          unsafe_allow_html=True)
+    render_who_we_are()
+
+    st.markdown("<div class='section-spacer'></div>", unsafe_allow_html=True)
     render_customer_info_panel()
 
-    # --- Debug/Admin Tools (below info panel, admin only) ---
     is_admin = st.session_state.get("is_admin", False)
     if is_admin:
         with st.expander("Debug / Admin Tools", expanded=False):
@@ -1040,31 +1347,26 @@ def render_welcome():
 
 
 def render_who_we_are():
-    st.markdown('<div class="snow-title">SNOW LIWA</div>', unsafe_allow_html=True)
+    st.markdown('<div class="landing-section">', unsafe_allow_html=True)
+    st.markdown('<div class="snow-title">SNOW LIWA</div>',
+                unsafe_allow_html=True)
     st.markdown(
         '<div class="subheading">من نحن ؟ · Who are we</div>',
         unsafe_allow_html=True,
     )
 
     ar_text = """
-مشروع شبابي إماراتي من قلب منطقة الظفرة ، 
+مشروع شبابي إماراتي من قلب منطقة الظفرة، يقدم تجربة شتوية فريدة تجمع بين أجواء ليوا الساحرة ولمسات من البساطة والجمال.
 
-يقدم تجربة شتوية فريدة تجمع بين أجواء ليوا الساحرة ولمسات من البساطة والجمال . 
-
-يهدف المشروع إلى خلق مساحة ترفيهية ودية للعائلات والشباب تجمع بين الديكور الشتوي الفخم والضيافة الراقية من مشروب الشوكولاتة الساخنة الي نافورة الشوكولاتة والفراولة الطازجة نحن نعمل على تطوير باستمرار بدعم من الجهات المحلية وروح الشباب الإماراتي الطموح .
+يهدف المشروع إلى خلق مساحة ترفيهية ودّية للعائلات والشباب تجمع بين ديكورات شتوية فاخرة وضيافة راقية من مشروب الشوكولاتة الساخنة إلى نافورة الشوكولاتة والفراولة الطازجة.
+نحن في تطوّر مستمر بدعم الجهات المحلية وروح الشباب الإماراتي الطموح.
 """
 
-    en_title = "? Who are we"
+    en_title = "Who are we?"
     en_text = """
-Emirati youth project from the heart of Al Dhafra region,
+Emirati youth project from the heart of Al Dhafra region. It offers a unique winter experience that combines the charming atmosphere of Liwa with touches of simplicity and beauty.
 
-It offers a unique winter experience that combines the charming atmosphere of Liwa
-with touches of simplicity and beauty.
-
-The project aims to create a friendly entertainment space for families and young people
-that combines luxurious winter decoration and high-end hospitality from hot chocolate
-drink to the fresh chocolate and strawberry fountain. We are constantly developing
-with the support of local authorities and the spirit of ambitious Emirati youth.
+The project aims to create a friendly entertainment space for families and young people that combines luxurious winter decoration and high-end hospitality, from hot chocolate drinks to fresh strawberries and a chocolate fountain. We are constantly developing with the support of local authorities and the spirit of ambitious Emirati youth.
 """
 
     st.markdown('<div class="dual-column">', unsafe_allow_html=True)
@@ -1076,103 +1378,89 @@ with the support of local authorities and the spirit of ambitious Emirati youth.
         f'<div class="english"><strong>{en_title}</strong><br><br>{en_text}</div>',
         unsafe_allow_html=True,
     )
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_experience():
-    st.markdown('<div class="snow-title">SNOW LIWA</div>', unsafe_allow_html=True)
+    st.markdown('<div class="landing-section">', unsafe_allow_html=True)
+    st.markdown('<div class="snow-title">SNOW LIWA</div>',
+                unsafe_allow_html=True)
     st.markdown(
         '<div class="subheading">Snow Experience · تجربة الثلج</div>',
         unsafe_allow_html=True,
     )
 
-    ar_block_1 = """
-تجربة الثلج ❄️ 
+    ar_block = """
+تجربة الثلج ❄️
 
 في مبادرةٍ فريدةٍ تمنح الزوّار أجواءً ثلجية ممتعة وتجربةً استثنائية لا تُنسى، يمكنكم الاستمتاع بمشاهدة تساقط الثلج، وتجربة مشروب الشوكولاتة الساخنة، مع ضيافةٍ راقية تشمل الفراولة ونافورة الشوكولاتة.
 
-تذكرة الدخول فقط بـ 175 درهمًا 
+بعد الدفع عن طريق تصوير الباركود تواصلوا معنا واستلموا تذكرتكم ولوكيشن موقعنا السري 🫣
 """
 
-    en_block_1 = """
-In a unique initiative that gives visitors a pleasant snowy
-atmosphere and an exceptional and unforgettable experience,
-you can enjoy watching the snowfall, and try a hot chocolate
-drink, with high-end hospitality including strawberries and a
-chocolate fountain.
+    en_block = """
+In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience,
+you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries
+and a chocolate fountain.
 
-The entrance ticket is only AED 175
-"""
-
-    ar_block_2 = """
-SNOW Liwa
-
-بعد الدفع عن طريق تصوير الباركود تواصلو معانا واستلمو تذكرتكم ولوكيشن موقعنا السري 🫣
-"""
-
-    en_block_2 = """
-SNOW Liwa
-
-After paying by photographing the barcode, contact us and receive
-your ticket and the location of our secret website 🫣
+After paying by photographing the barcode, contact us and receive your ticket and the location of our secret spot 🫣
 """
 
     st.markdown('<div class="dual-column">', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="arabic">{ar_block_1}<br><br>{ar_block_2}</div>',
-        unsafe_allow_html=True,
-    )
+        f'<div class="arabic">{ar_block}</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="english">{en_block_1}<br><br>{en_block_2}</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+        f'<div class="english">{en_block}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown(
-        f'<div class="ticket-price">🎟️ Entrance Ticket: <strong>{TICKET_PRICE} AED</strong> per person</div>',
+        f"<div class='ticket-price'>🎟️ Entrance Ticket: <strong>{TICKET_PRICE} AED</strong> per person</div>",
         unsafe_allow_html=True,
     )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_contact():
-    st.markdown('<div class="snow-title">SNOW LIWA</div>', unsafe_allow_html=True)
+    st.markdown('<div class="landing-section">', unsafe_allow_html=True)
+    st.markdown('<div class="snow-title">SNOW LIWA</div>',
+                unsafe_allow_html=True)
     st.markdown(
         '<div class="subheading">Contact · تواصل معنا</div>',
         unsafe_allow_html=True,
     )
 
-    st.markdown("### 📞 Contact Us / تواصل معنا")
-
     ar_contact = """
-**رقم الهاتف**
-
-050 113 8781
-
-للتواصل عبر الواتساب فقط أو من خلال حسابنا في الإنستغرام:
+📞 **رقم الهاتف**<br>
+050 113 8781<br><br>
+للتواصل عبر الواتساب فقط أو من خلال حسابنا في الإنستغرام:<br>
 **snowliwa**
 """
 
     en_contact = """
-**Phone**
-
-050 113 8781
-
-To contact WhatsApp only or on our Instagram account:
-
+📞 **Phone**<br>
+050 113 8781<br><br>
+WhatsApp only or through Instagram:<br>
 **snowliwa**
 """
 
     st.markdown('<div class="dual-column">', unsafe_allow_html=True)
-    st.markdown(f'<div class="arabic">{ar_contact}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="english">{en_contact}</div>', unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="arabic">{ar_contact}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="english">{en_contact}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.write("You can later add direct WhatsApp links or Instagram buttons here.")
+    st.markdown(
+        "<div class='center-btn'><a class='btn btn-primary' href='https://wa.me/971501138781' target='_blank'>تواصل عبر واتساب</a></div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_dashboard():
-    st.markdown('<div class="snow-title">SNOW LIWA</div>', unsafe_allow_html=True)
+    st.markdown('<div class="snow-title">SNOW LIWA</div>',
+                unsafe_allow_html=True)
     st.markdown(
         '<div class="subheading">Dashboard · لوحة التحكم</div>',
         unsafe_allow_html=True,
@@ -1221,19 +1509,9 @@ def render_dashboard():
 
 def render_payment_result(result: str, pi_id: str):
     """Page shown when user returns from Ziina with pi_id in URL."""
-    st.markdown('<div class="snow-title">SNOW LIWA</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subheading">Payment result · نتيجة الدفع</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.write(f"**Payment Intent ID:** `{pi_id}`")
-
     df = load_bookings()
     row = df[df["payment_intent_id"].astype(str) == str(pi_id)]
     booking_id = row["booking_id"].iloc[0] if not row.empty else None
-    if booking_id:
-        st.write(f"**Booking ID:** `{booking_id}`")
 
     pi_status = None
     if pi_id:
@@ -1242,45 +1520,124 @@ def render_payment_result(result: str, pi_id: str):
             pi_status = pi.get("status")
             if not row.empty:
                 idx = row.index[0]
-                df.at[idx, "payment_status"] = pi_status
+                df.loc[df.index == idx, "payment_status"] = pi_status
                 if pi_status == "completed":
-                    df.at[idx, "status"] = "paid"
+                    df.loc[df.index == idx, "status"] = "paid"
                 elif pi_status in ("failed", "canceled"):
-                    df.at[idx, "status"] = "cancelled"
+                    df.loc[df.index == idx, "status"] = "cancelled"
                 save_bookings(df)
 
-    final_status = pi_status or result
+    final_status = (pi_status or result or "").lower()
 
-    if final_status == "completed":
-        st.success(
-            "✅ تم الدفع بنجاح!\n\n"
-            "شكرًا لاختياركم **SNOW LIWA** ❄️\n\n"
-            "تواصلوا معنا عبر الواتساب مع رقم الحجز لاستلام التذكرة ولوكيشن الموقع."
-        )
+    status_map = {
+        "completed": {
+            "cls": "success",
+            "icon": "✅",
+            "title": "تم الدفع بنجاح!",
+            "details": (
+                "شكرًا لاختياركم <strong>SNOW LIWA</strong> ❄️<br>"
+                "تذكرتك الإلكترونية جاهزة! تواصل معنا عبر الواتساب مع رقم الحجز لاستلام اللوكيشن السري."
+            ),
+        },
+        "pending": {
+            "cls": "info",
+            "icon": "ℹ️",
+            "title": "عملية الدفع قيد المعالجة",
+            "details": (
+                "عملية الدفع قيد المعالجة أو لم تكتمل بعد.<br>"
+                "لو تأكدت أن المبلغ تم خصمه، أرسل لنا رقم الحجز لنراجع الحالة."
+            ),
+        },
+        "failed": {
+            "cls": "error",
+            "icon": "❌",
+            "title": "لم تتم عملية الدفع",
+            "details": (
+                "لم تتم عملية الدفع أو تم إلغاؤها.<br>"
+                "يمكنك إعادة المحاولة من صفحة الحجز أو التواصل معنا للمساعدة."
+            ),
+        },
+        "unknown": {
+            "cls": "warning",
+            "icon": "⚠️",
+            "title": "تعذر التأكد من حالة الدفع",
+            "details": "يرجى التواصل معنا على الواتساب مع رقم الحجز للتحقق من العملية.",
+        },
+    }
+
+    if final_status in ("completed", "success"):
+        status_key = "completed"
     elif final_status in ("pending", "requires_payment_instrument", "requires_user_action"):
-        st.info(
-            "ℹ️ عملية الدفع قيد المعالجة أو لم تكتمل بعد.\n\n"
-            "لو تأكدت أن المبلغ تم خصمه، أرسل لنا رقم الحجز لنراجع الحالة."
-        )
-    elif final_status in ("failed", "canceled"):
-        st.error(
-            "❌ لم تتم عملية الدفع أو تم إلغاؤها.\n\n"
-            "يمكنك إعادة المحاولة من صفحة الحجز أو التواصل معنا للمساعدة."
-        )
+        status_key = "pending"
+    elif final_status in ("failed", "canceled", "cancel", "failure"):
+        status_key = "failed"
     else:
-        st.warning(
-            "تعذر التأكد من حالة الدفع.\n\n"
-            "يرجى التواصل معنا على الواتساب مع رقم الحجز للتحقق من العملية."
-        )
+        status_key = "unknown"
 
-    st.markdown("---")
-    st.markdown(
-        "📱 للتواصل: واتساب أو إنستغرام **snowliwa** مع ذكر رقم الحجز.",
+    meta = status_map[status_key]
+    booking_html = (
+        f"<div class='payment-info-row'><strong>Booking ID:</strong> {html.escape(str(booking_id))}</div>"
+        if booking_id
+        else ""
+    )
+    pi_html = (
+        f"<div class='payment-info-row'><strong>Payment Intent ID:</strong> {html.escape(str(pi_id))}</div>"
+        if pi_id
+        else ""
     )
 
-    st.markdown('<div class="center-btn">', unsafe_allow_html=True)
-    st.link_button("Back to SNOW LIWA home", get_ziina_app_base_url(), use_container_width=False)
-    st.markdown("</div>", unsafe_allow_html=True)
+    home_url = get_ziina_app_base_url()
+
+    st.markdown('<div class="payment-container">', unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="payment-logo-title">SNOW LIWA</div>
+        <div class="payment-subtitle">نتيجة الدفع · Payment Result</div>
+        <div class="status-box {meta['cls']}">
+            <div class="status-icon">{meta['icon']}</div>
+            <div class="status-message">{meta['title']}</div>
+            <div class="status-details">{meta['details']}</div>
+        </div>
+        {booking_html}
+        {pi_html}
+        <div class="payment-footer">📱 للتواصل: واتساب أو إنستغرام <strong>snowliwa</strong> مع ذكر رقم الحجز.</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="payment-actions">', unsafe_allow_html=True)
+
+    ticket_bytes = None
+    if status_key == "completed" and not row.empty:
+        try:
+            row_data = row.iloc[0]
+            ticket_text = build_ticket_text(
+                row_data["booking_id"],
+                row_data["name"],
+                row_data["phone"],
+                int(row_data["tickets"]),
+                float(row_data["total_amount"]),
+            )
+            ticket_bytes = ticket_text.encode("utf-8")
+        except Exception:
+            ticket_bytes = None
+
+    if ticket_bytes:
+        st.download_button(
+            "🎟️ تنزيل التذكرة",
+            data=ticket_bytes,
+            file_name=f"{booking_id}_ticket.txt",
+            mime="text/plain",
+            use_container_width=True,
+        )
+
+    st.markdown(
+        f"<a class='secondary' href='{home_url}' target='_self'>العودة إلى صفحة SNOW LIWA الرئيسية</a>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =========================
@@ -1288,10 +1645,11 @@ def render_payment_result(result: str, pi_id: str):
 # =========================
 
 
-
 def render_settings():
-    st.markdown('<div class="snow-title">Settings</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subheading">App Settings · إعدادات التطبيق</div>', unsafe_allow_html=True)
+    st.markdown('<div class="snow-title">Settings</div>',
+                unsafe_allow_html=True)
+    st.markdown('<div class="subheading">App Settings · إعدادات التطبيق</div>',
+                unsafe_allow_html=True)
 
     # --- Initialize settings dict in session_state ---
     if "settings" not in st.session_state:
@@ -1302,9 +1660,11 @@ def render_settings():
     temp = {}
     st.header("1. Background")
     bg_modes = ["preset1", "preset2", "preset3", "uploaded"]
-    temp["background_mode"] = st.selectbox("Background mode", bg_modes, index=bg_modes.index(settings.get("background_mode", "preset1")), key="bg_mode")
+    temp["background_mode"] = st.selectbox("Background mode", bg_modes, index=bg_modes.index(
+        settings.get("background_mode", "preset1")), key="bg_mode")
     if temp["background_mode"] == "uploaded":
-        uploaded_bg = st.file_uploader("Upload background image", type=["png", "jpg", "jpeg"], key="bg_upload")
+        uploaded_bg = st.file_uploader("Upload background image", type=[
+                                       "png", "jpg", "jpeg"], key="bg_upload")
         if uploaded_bg:
             bg_path = "assets/bg_uploaded.png"
             with open(bg_path, "wb") as f:
@@ -1312,19 +1672,24 @@ def render_settings():
             temp["background_image_path"] = bg_path
             st.success("Background image uploaded!")
         else:
-            temp["background_image_path"] = settings.get("background_image_path")
+            temp["background_image_path"] = settings.get(
+                "background_image_path")
     else:
         temp["background_image_path"] = None
 
     st.header("1A. Background Appearance")
-    temp["background_brightness"] = st.slider("Background brightness", min_value=0.2, max_value=1.5, value=float(settings.get("background_brightness", 1.0)), step=0.05, key="bg_brightness")
-    temp["background_blur"] = st.slider("Background blur (px)", min_value=0, max_value=20, value=int(settings.get("background_blur", 0)), step=1, key="bg_blur")
+    temp["background_brightness"] = st.slider("Background brightness", min_value=0.2, max_value=1.5, value=float(
+        settings.get("background_brightness", 1.0)), step=0.05, key="bg_brightness")
+    temp["background_blur"] = st.slider("Background blur (px)", min_value=0, max_value=20, value=int(
+        settings.get("background_blur", 0)), step=1, key="bg_blur")
 
     st.header("2. Hero Image")
     hero_sources = ["assets/hero_main.png", "uploaded", "none"]
-    temp["hero_image_source"] = st.selectbox("Hero image source", hero_sources, index=hero_sources.index(settings.get("hero_image_source", "assets/hero_main.png")), key="hero_img_src")
+    temp["hero_image_source"] = st.selectbox("Hero image source", hero_sources, index=hero_sources.index(
+        settings.get("hero_image_source", "assets/hero_main.png")), key="hero_img_src")
     if temp["hero_image_source"] == "uploaded":
-        uploaded_hero = st.file_uploader("Upload hero image", type=["png", "jpg", "jpeg"], key="hero_upload")
+        uploaded_hero = st.file_uploader("Upload hero image", type=[
+                                         "png", "jpg", "jpeg"], key="hero_upload")
         if uploaded_hero:
             hero_path = "assets/hero_uploaded.png"
             with open(hero_path, "wb") as f:
@@ -1335,48 +1700,70 @@ def render_settings():
             temp["hero_image_path"] = settings.get("hero_image_path")
     else:
         temp["hero_image_path"] = temp["hero_image_source"] if temp["hero_image_source"] != "none" else None
-    temp["hero_side"] = st.selectbox("Hero image side", ["left", "right"], index=["left", "right"].index(settings.get("hero_side", "left")), key="hero_side")
-    temp["hero_card_size"] = st.selectbox("Hero card size", ["small", "medium", "large"], index=["small", "medium", "large"].index(settings.get("hero_card_size", "medium")), key="hero_card_size")
+    temp["hero_side"] = st.selectbox("Hero image side", ["left", "right"], index=[
+                                     "left", "right"].index(settings.get("hero_side", "left")), key="hero_side")
+    temp["hero_card_size"] = st.selectbox("Hero card size", ["small", "medium", "large"], index=[
+                                          "small", "medium", "large"].index(settings.get("hero_card_size", "medium")), key="hero_card_size")
 
     st.header("3. Theme")
-    accent_options = {"snow_blue": "#7ecbff", "purple": "#a259ff", "pink": "#ff6fae", "warm_yellow": "#e0b455"}
-    temp["accent_color"] = st.selectbox("Accent color", list(accent_options.keys()), index=list(accent_options.keys()).index(settings.get("accent_color", "snow_blue")), key="accent_color")
-    temp["theme_mode"] = st.selectbox("Theme mode", ["light", "snow_night"], index=["light", "snow_night"].index(settings.get("theme_mode", "light")), key="theme_mode")
+    accent_options = {"snow_blue": "#7ecbff", "purple": "#a259ff",
+                      "pink": "#ff6fae", "warm_yellow": "#e0b455"}
+    temp["accent_color"] = st.selectbox("Accent color", list(accent_options.keys()), index=list(
+        accent_options.keys()).index(settings.get("accent_color", "snow_blue")), key="accent_color")
+    temp["theme_mode"] = st.selectbox("Theme mode", ["light", "snow_night"], index=[
+                                      "light", "snow_night"].index(settings.get("theme_mode", "light")), key="theme_mode")
 
     st.header("4. Text Content")
-    temp["hero_subtitle"] = st.text_input("Hero subtitle", value=settings.get("hero_subtitle", "تجربة شتوية في قلب الظفرة"), key="hero_subtitle")
-    temp["hero_intro_paragraph"] = st.text_area("Hero intro paragraph", value=settings.get("hero_intro_paragraph", "مشروع شبابي إماراتي يقدم أجواء ليوا الشتوية للعائلات والشباب، من لعب الثلج إلى الشوكولاتة الساخنة."), key="hero_intro_paragraph")
-    temp["working_days"] = st.text_input("Working days (badge)", value=settings.get("working_days", "كل أيام الأسبوع"), key="working_days")
-    temp["working_hours"] = st.text_input("Working hours (badge)", value=settings.get("working_hours", "4:00pm - 12:00am"), key="working_hours")
+    temp["hero_subtitle"] = st.text_input("Hero subtitle", value=settings.get(
+        "hero_subtitle", "تجربة شتوية في قلب الظفرة"), key="hero_subtitle")
+    temp["hero_intro_paragraph"] = st.text_area("Hero intro paragraph", value=settings.get(
+        "hero_intro_paragraph", "مشروع شبابي إماراتي يقدم أجواء ليوا الشتوية للعائلات والشباب، من لعب الثلج إلى الشوكولاتة الساخنة."), key="hero_intro_paragraph")
+    temp["working_days"] = st.text_input("Working days (badge)", value=settings.get(
+        "working_days", "كل أيام الأسبوع"), key="working_days")
+    temp["working_hours"] = st.text_input("Working hours (badge)", value=settings.get(
+        "working_hours", "4:00pm - 12:00am"), key="working_hours")
 
     st.header("5. Tickets")
-    temp["ticket_price"] = st.number_input("Ticket price", min_value=0, value=int(settings.get("ticket_price", 175)), key="ticket_price")
-    temp["ticket_currency"] = st.text_input("Ticket currency", value=settings.get("ticket_currency", "AED"), key="ticket_currency")
-    temp["max_tickets_per_booking"] = st.number_input("Max tickets per booking", min_value=1, value=int(settings.get("max_tickets_per_booking", 10)), key="max_tickets_per_booking")
+    temp["ticket_price"] = st.number_input("Ticket price", min_value=0, value=int(
+        settings.get("ticket_price", 175)), key="ticket_price")
+    temp["ticket_currency"] = st.text_input("Ticket currency", value=settings.get(
+        "ticket_currency", "AED"), key="ticket_currency")
+    temp["max_tickets_per_booking"] = st.number_input("Max tickets per booking", min_value=1, value=int(
+        settings.get("max_tickets_per_booking", 10)), key="max_tickets_per_booking")
 
     st.header("6. Payment / API")
-    temp["payment_mode"] = st.selectbox("Payment mode", ["cash_on_arrival", "payment_link"], index=["cash_on_arrival", "payment_link"].index(settings.get("payment_mode", "cash_on_arrival")), key="payment_mode")
-    temp["payment_base_url_or_template"] = st.text_input("Payment base URL or template", value=settings.get("payment_base_url_or_template", ""), key="payment_base_url_or_template")
+    temp["payment_mode"] = st.selectbox("Payment mode", ["cash_on_arrival", "payment_link"], index=[
+                                        "cash_on_arrival", "payment_link"].index(settings.get("payment_mode", "cash_on_arrival")), key="payment_mode")
+    temp["payment_base_url_or_template"] = st.text_input("Payment base URL or template", value=settings.get(
+        "payment_base_url_or_template", ""), key="payment_base_url_or_template")
     st.caption("API key/token must be set in st.secrets, not here.")
 
     st.header("7. WhatsApp")
-    temp["whatsapp_enabled"] = st.checkbox("Enable WhatsApp confirmation", value=settings.get("whatsapp_enabled", False), key="whatsapp_enabled")
-    temp["whatsapp_phone"] = st.text_input("WhatsApp phone (no +)", value=settings.get("whatsapp_phone", "971501234567"), key="whatsapp_phone")
-    temp["whatsapp_message_template"] = st.text_area("WhatsApp message template", value=settings.get("whatsapp_message_template", "مرحبا، أود تأكيد حجز رقم {booking_id} لعدد {tickets} تذاكر في SNOW LIWA."), key="whatsapp_message_template")
+    temp["whatsapp_enabled"] = st.checkbox("Enable WhatsApp confirmation", value=settings.get(
+        "whatsapp_enabled", False), key="whatsapp_enabled")
+    temp["whatsapp_phone"] = st.text_input(
+        "WhatsApp phone (no +)", value=settings.get("whatsapp_phone", "971501234567"), key="whatsapp_phone")
+    temp["whatsapp_message_template"] = st.text_area("WhatsApp message template", value=settings.get(
+        "whatsapp_message_template", "مرحبا، أود تأكيد حجز رقم {booking_id} لعدد {tickets} تذاكر في SNOW LIWA."), key="whatsapp_message_template")
 
     st.header("8. Snow Effect")
-    temp["snow_enabled"] = st.checkbox("Enable snow effect", value=settings.get("snow_enabled", False), key="snow_enabled")
-    temp["snow_density"] = st.selectbox("Snow density", ["light", "medium", "heavy"], index=["light", "medium", "heavy"].index(settings.get("snow_density", "medium")), key="snow_density")
-
+    temp["snow_enabled"] = st.checkbox("Enable snow effect", value=settings.get(
+        "snow_enabled", False), key="snow_enabled")
+    temp["snow_density"] = st.selectbox("Snow density", ["light", "medium", "heavy"], index=[
+                                        "light", "medium", "heavy"].index(settings.get("snow_density", "medium")), key="snow_density")
 
     st.header("9. Contact Badges")
-    temp["location_label"] = st.text_input("Location label", value=settings.get("location_label", "الموقع: منطقة الظفرة – ليوا"), key="location_label")
-    temp["season_label"] = st.text_input("Season label", value=settings.get("season_label", "الموسم: شتاء 2025"), key="season_label")
-    temp["family_label"] = st.text_input("Family label", value=settings.get("family_label", "مناسب للعائلات والأطفال"), key="family_label")
+    temp["location_label"] = st.text_input("Location label", value=settings.get(
+        "location_label", "الموقع: منطقة الظفرة – ليوا"), key="location_label")
+    temp["season_label"] = st.text_input("Season label", value=settings.get(
+        "season_label", "الموسم: شتاء 2025"), key="season_label")
+    temp["family_label"] = st.text_input("Family label", value=settings.get(
+        "family_label", "مناسب للعائلات والأطفال"), key="family_label")
 
     # --- Ticket Poster Upload Section ---
     st.header("10. Ticket Poster Image")
-    poster_file = st.file_uploader("Upload ticket poster (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key="poster_upload")
+    poster_file = st.file_uploader("Upload ticket poster (PNG, JPG, JPEG)", type=[
+                                   "png", "jpg", "jpeg"], key="poster_upload")
     if poster_file:
         poster_path = "assets/ticket_poster.png"
         os.makedirs(os.path.dirname(poster_path), exist_ok=True)
@@ -1395,6 +1782,7 @@ def render_settings():
         st.session_state["settings"].update(temp)
         st.success("تم حفظ جميع الإعدادات بنجاح! / All settings saved.")
 
+
 def main():
     init_state()
     ensure_data_file()
@@ -1403,7 +1791,8 @@ def main():
     page_nav()
 
     query = get_query_params()
-    result_param = _normalize_query_value(query.get("result")) if query else None
+    result_param = _normalize_query_value(
+        query.get("result")) if query else None
     pi_id_param = _normalize_query_value(query.get("pi_id")) if query else None
 
     # If coming back from Ziina with pi_id -> show payment result
@@ -1416,7 +1805,8 @@ def main():
         st.markdown("</div></div>", unsafe_allow_html=True)
         return
 
-    st.markdown('<div class="page-container"><div class="page-card">', unsafe_allow_html=True)
+    st.markdown('<div class="page-container"><div class="page-card">',
+                unsafe_allow_html=True)
     if st.session_state.page == "Welcome":
         render_welcome()
     elif st.session_state.page == "Who we are":

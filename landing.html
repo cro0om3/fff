@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>SNOW LIWA – تجربة الثلج في قلب الظفرة</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Google Fonts -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700&family=Noto+Kufi+Arabic:wght@400;600;700&display=swap"
+    rel="stylesheet" />
+
+  <style>
+    :root {
+      --color-bg: #f5fbff;
+      --color-bg-soft: #ffffff;
+      --color-accent: #4dafff;
+      /* ثلجي */
+      --color-accent-soft: #ffcf70;
+      /* رملي ذهبي */
+      --color-text-main: #163046;
+      --color-text-muted: #6b7b8c;
+      --color-danger: #ff4b6b;
+      --radius-pill: 999px;
+      --radius-lg: 18px;
+      --shadow-soft: 0 14px 40px rgba(7, 36, 63, 0.10);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Noto Kufi Arabic", "Nunito", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at top right, #ffffff, #f3f7ff 55%, #ffe9c3 120%);
+      color: var(--color-text-main);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 16px 16px 40px;
+    }
+
+    /* HEADER */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 8px 0 16px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4dafff, #ffcf70);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 18px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+    }
+
+    .logo-text-main {
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      font-size: 18px;
+    }
+
+    .logo-text-sub {
+      font-size: 11px;
+      color: var(--color-text-muted);
+    }
+
+    .header-cta {
+      font-size: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 20px;
+      border-radius: var(--radius-pill);
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #ffcf70, #f7b343);
+      color: #2b1b05;
+      box-shadow: 0 10px 26px rgba(211, 151, 49, 0.55);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 36px rgba(211, 151, 49, 0.75);
+    }
+
+    .btn-outline {
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      color: var(--color-text-main);
+      box-shadow: 0 6px 16px rgba(7, 36, 63, 0.12);
+    }
+
+    .btn-outline:hover {
+      background: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    /* HERO */
+    .hero {
+      margin-top: 6px;
+      padding: 24px 18px 32px;
+      border-radius: 26px;
+      background:
+        radial-gradient(circle at top left, rgba(255, 255, 255, 0.9), transparent 55%),
+        linear-gradient(145deg, #f5fbff 0%, #ffffff 40%, #ffe9c3 100%);
+      box-shadow: var(--shadow-soft);
+      display: grid;
+      gap: 16px;
+    }
+
+    .hero-title-en {
+      font-size: 26px;
+      letter-spacing: 0.3em;
+      text-align: center;
+      color: #61b8ff;
+      margin-bottom: 4px;
+    }
+
+    .hero-title-ar {
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .hero-subtext-ar,
+    .hero-subtext-en {
+      text-align: center;
+      font-size: 13px;
+      color: var(--color-text-muted);
+      margin: 0 0 4px;
+    }
+
+    .hero-subtext-en {
+      direction: ltr;
+      text-align: center;
+      font-family: "Nunito", system-ui, sans-serif;
+    }
+
+    .hero-cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 10px;
+    }
+
+    .hero-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 12px;
+      font-size: 11px;
+      color: var(--color-text-muted);
+    }
+
+    .badge-soft {
+      padding: 6px 10px;
+      border-radius: var(--radius-pill);
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid #e0e9f5;
+    }
+
+    /* MAIN LAYOUT */
+    main {
+      margin-top: 26px;
+      display: grid;
+      gap: 18px;
+    }
+
+    section {
+      background: var(--color-bg-soft);
+      border-radius: 22px;
+      padding: 18px 16px 20px;
+      box-shadow: var(--shadow-soft);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .section-tag {
+      font-size: 11px;
+      color: var(--color-text-muted);
+    }
+
+    .section-body p {
+      margin: 4px 0;
+      font-size: 13px;
+      color: var(--color-text-main);
+    }
+
+    .section-body p.en {
+      direction: ltr;
+      text-align: left;
+      font-family: "Nunito", system-ui, sans-serif;
+      color: var(--color-text-muted);
+    }
+
+    /* EXPERIENCE + TICKET */
+    .pill-highlight {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: var(--radius-pill);
+      background: rgba(255, 207, 112, 0.14);
+      color: var(--color-danger);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .ticket-card {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #fdf8ee, #fff4dc);
+      font-size: 13px;
+      box-shadow: 0 10px 26px rgba(243, 188, 96, 0.35);
+    }
+
+    .ticket-price {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .steps-list {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: var(--color-text-main);
+    }
+
+    .steps-list li {
+      margin-bottom: 4px;
+    }
+
+    /* BOOKING FORM */
+    .booking-form {
+      display: grid;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .form-field {
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+    }
+
+    .form-field label {
+      color: var(--color-text-muted);
+    }
+
+    .form-field input,
+    .form-field textarea {
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      padding: 10px 12px;
+      font-family: inherit;
+      font-size: 13px;
+      background: #f8fbff;
+      outline: none;
+      transition: border 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+
+    .form-field textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    .form-field input:focus,
+    .form-field textarea:focus {
+      border-color: #4dafff;
+      background: #ffffff;
+      box-shadow: 0 0 0 1px rgba(77, 175, 255, 0.3);
+    }
+
+    .tickets-input {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tickets-input input[type="number"] {
+      max-width: 80px;
+      text-align: center;
+    }
+
+    .tickets-input button {
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      border: none;
+      background: #e3f2ff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* WHO WE ARE */
+    .who-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .who-grid .en {
+      font-family: "Nunito", system-ui, sans-serif;
+      direction: ltr;
+      text-align: left;
+      font-size: 13px;
+      color: var(--color-text-muted);
+    }
+
+    /* POSTER / IMAGE SECTION */
+    .poster-box {
+      margin-top: 10px;
+      border-radius: 18px;
+      border: 1px dashed #d2e0f0;
+      min-height: 140px;
+      background: radial-gradient(circle at top, #f3f9ff, #ffffff);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: var(--color-text-muted);
+      text-align: center;
+      padding: 10px;
+    }
+
+    .poster-box img {
+      max-width: 100%;
+      border-radius: 16px;
+      display: block;
+    }
+
+    /* FAQ / FOOTER */
+    .faq-list {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: var(--color-text-main);
+    }
+
+    .faq-list li {
+      margin-bottom: 6px;
+    }
+
+    footer {
+      margin-top: 26px;
+      padding-top: 14px;
+      border-top: 1px solid #e4edf5;
+      font-size: 11px;
+      color: var(--color-text-muted);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .footer-links a {
+      color: var(--color-text-muted);
+    }
+
+    /* DESKTOP */
+    @media (min-width: 900px) {
+      .hero {
+        grid-template-columns: 1.2fr 1fr;
+        align-items: center;
+      }
+
+      .hero-text {
+        padding-inline-end: 20px;
+      }
+
+      .hero-title-en,
+      .hero-title-ar,
+      .hero-subtext-ar,
+      .hero-subtext-en {
+        text-align: start;
+      }
+
+      .hero-subtext-en {
+        text-align: left;
+      }
+
+      main {
+        grid-template-columns: 1.1fr 0.9fr;
+        align-items: flex-start;
+      }
+
+      section.full-width {
+        grid-column: 1 / -1;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="page">
+
+    <!-- HEADER -->
+    <header>
+      <div class="logo">
+        <div class="logo-mark">SL</div>
+        <div>
+          <div class="logo-text-main">SNOW LIWA</div>
+          <div class="logo-text-sub">تجربة الثلج في قلب ليوا</div>
+        </div>
+      </div>
+      <div class="header-cta">
+        <a href="#booking" class="btn btn-primary">احجز تذكرتك الآن</a>
+      </div>
+    </header>
+
+    <!-- HERO -->
+    <section class="hero" id="top">
+      <div class="hero-text">
+        <div class="hero-title-en">SNOW LIWA</div>
+        <div class="hero-title-ar">تجربة شتوية في قلب الظفرة</div>
+
+        <p class="hero-subtext-ar">
+          مشروع شبابي إماراتي يقدم أجواء شتوية للعائلات والشباب، من لعب الثلج إلى
+          الشوكولاتة الساخنة ولمسات من البساطة والجمال.
+        </p>
+        <p class="hero-subtext-en">
+          Emirati youth project offering a cozy winter experience in the heart of Al Dhafra,
+          mixing the charm of Liwa desert with snow, hot chocolate and warm hospitality.
+        </p>
+
+        <div class="hero-cta-row">
+          <a href="#booking" class="btn btn-primary">🎟️ احجز تذكرتك الآن</a>
+          <a href="#who" class="btn btn-outline">تعرف علينا أكثر</a>
+        </div>
+
+        <div class="hero-badges">
+          <span class="badge-soft">❄️ Snow Experience</span>
+          <span class="badge-soft">🏜️ Desert x Snow</span>
+          <span class="badge-soft">👨‍👩‍👧‍👦 Families & Youth</span>
+        </div>
+      </div>
+
+      <div>
+        <!-- ضع هنا صورة البوستر الرئيسية -->
+        <div class="poster-box">
+          <!-- مثال: <img src="images/snow-liwa-poster.jpg" alt="Snow Liwa Poster" /> -->
+          Poster image placeholder – ضع صورة SNOW LIWA هنا
+        </div>
+      </div>
+    </section>
+
+    <main>
+
+      <!-- SNOW EXPERIENCE + TICKET INFO -->
+      <section id="experience">
+        <div class="section-header">
+          <div class="section-title">تجربة الثلج ❄️</div>
+          <div class="section-tag">SNOW EXPERIENCE</div>
+        </div>
+        <div class="section-body">
+          <p>
+            في مبادرةٍ فريدةٍ تمنح الزوّار أجواءً ثلجية ممتعة وتجربةً استثنائية لا تُنسى،
+            يمكنكم الاستمتاع بمشاهدة تساقط الثلج، وتجربة مشروب الشوكولاتة الساخنة، مع ضيافةٍ
+            راقية تشمل الفراولة ونافورة الشوكولاتة.
+          </p>
+          <p class="en">
+            In a unique initiative that gives visitors a pleasant snowy atmosphere and an
+            exceptional and unforgettable experience, you can enjoy watching the snowfall,
+            and try a hot chocolate drink, with high-end hospitality including strawberries
+            and a chocolate fountain.
+          </p>
+
+          <div class="ticket-card">
+            <div class="ticket-price">🎟️ Entrance ticket: 175 AED per person</div>
+            <span class="pill-highlight">تذكرة الدخول فقط بـ 175 درهمًا</span>
+            <ul class="steps-list">
+              <li>① املأ نموذج الحجز بالمعلومات المطلوبة.</li>
+              <li>② ادفع أونلاين عبر Ziina (175 درهم لكل شخص).</li>
+              <li>③ استلم تذكرتك الإلكترونية مباشرة بعد الدفع.</li>
+              <li>④ تواصل معنا على الواتساب لاستلام لوكيشن الموقع 🫣</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- BOOKING FORM -->
+      <section id="booking">
+        <div class="section-header">
+          <div class="section-title">إحجز تذكرتك الآن</div>
+          <div class="section-tag">Book your ticket</div>
+        </div>
+
+        <div class="section-body">
+          <div class="pill-highlight">احجز الآن وادفع أونلاين – احصل على تذكرتك فوراً</div>
+
+          <!-- يمكنك ربط الفورم مع أتمتة لاحقًا (WhatsApp / Google Sheet / Airtable...) -->
+          <form class="booking-form" id="bookingForm" onsubmit="return false;">
+            <div class="form-field">
+              <label for="name">Name / الاسم الكامل</label>
+              <input id="name" name="name" type="text" placeholder="اكتب اسمك الكامل هنا" required />
+            </div>
+
+            <div class="form-field">
+              <label for="phone">Phone (WhatsApp) / رقم الهاتف (واتساب)</label>
+              <input id="phone" name="phone" type="tel" placeholder="05XXXXXXXX" required />
+            </div>
+
+            <div class="form-field">
+              <label for="tickets">Number of tickets / عدد التذاكر</label>
+              <div class="tickets-input">
+                <button type="button" onclick="changeTickets(-1)">−</button>
+                <input id="tickets" name="tickets" type="number" value="1" min="1" />
+                <button type="button" onclick="changeTickets(1)">+</button>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label for="notes">Notes (optional) / ملاحظات اختيارية</label>
+              <textarea id="notes" name="notes" placeholder="مثال: عدد الأطفال، وقت التفضيل، أي ملاحظة أخرى"></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary">احجز / Book</button>
+
+            <p style="font-size:11px;color:var(--color-text-muted);margin-top:6px;">
+              بعد إتمام الدفع أونلاين، ستحصل على تذكرتك الإلكترونية مباشرة. يمكنك طباعتها أو حفظها على جوالك.
+            </p>
+          </form>
+        </div>
+      </section>
+
+      <!-- WHO WE ARE -->
+      <section id="who" class="full-width">
+        <div class="section-header">
+          <div class="section-title">من نحن؟</div>
+          <div class="section-tag">Who are we</div>
+        </div>
+        <div class="section-body who-grid">
+          <p>
+            مشروع شبابي إماراتي من قلب منطقة الظفرة، يقدم تجربة شتوية فريدة تجمع بين أجواء ليوا
+            الساحرة ولمسات من البساطة والجمال.
+          </p>
+          <p>
+            يهدف المشروع إلى خلق مساحة ترفيهية ودّية للعائلات والشباب تجمع بين ديكورات شتوية فاخرة
+            وضيافة راقية من مشروب الشوكولاتة الساخنة إلى نافورة الشوكولاتة والفراولة الطازجة.
+            نحن في تطوّر مستمر بدعم الجهات المحلية وروح الشباب الإماراتي الطموح.
+          </p>
+          <p class="en">
+            Emirati youth project from the heart of Al Dhafra region. It offers a unique winter
+            experience that combines the charming atmosphere of Liwa with touches of simplicity
+            and beauty.
+          </p>
+          <p class="en">
+            The project aims to create a friendly entertainment space for families and young
+            people that combines luxurious winter decoration and high-end hospitality, from hot
+            chocolate drinks to fresh strawberries and a chocolate fountain. We are constantly
+            developing with the support of local authorities and the spirit of ambitious Emirati youth.
+          </p>
+        </div>
+      </section>
+
+      <!-- FAQ / EXTRA INFO -->
+      <section class="full-width">
+        <div class="section-header">
+          <div class="section-title">أسئلة شائعة</div>
+          <div class="section-tag">FAQ</div>
+        </div>
+        <ul class="faq-list">
+          <li><strong>هل المكان مناسب للعائلات؟</strong> نعم، SNOW LIWA مخصص للعائلات والشباب مع أجواء آمنة وممتعة.</li>
+          <li><strong>هل يجب الحجز مسبقًا؟</strong> نعم، احجز وادفع أونلاين عبر موقعنا لتضمن مكانك وتحصل على تذكرتك
+            فوراً.</li>
+          <li><strong>أين موقعكم؟</strong> الموقع سري 🫣 – سيتم إرسال اللوكيشن بعد تأكيد الدفع على الواتساب.</li>
+        </ul>
+      </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer>
+      <div class="footer-links">
+        <a href="#who">من نحن؟</a>
+        <a href="#experience">تجربة الثلج</a>
+        <a href="#booking">الحجز</a>
+      </div>
+      <div>© SNOW LIWA – Emirati Youth Project</div>
+    </footer>
+  </div>
+
+  <script>
+    function changeTickets(delta) {
+      const input = document.getElementById('tickets');
+      let val = parseInt(input.value || '1', 10);
+      val = isNaN(val) ? 1 : val + delta;
+      if (val < 1) val = 1;
+      input.value = val;
+    }
+
+    // Handle form submission - force page navigation
+    document.addEventListener('DOMContentLoaded', function () {
+      const form = document.getElementById('bookingForm');
+      if (form) {
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          // Get form data
+          const name = document.getElementById('name').value;
+          const phone = document.getElementById('phone').value;
+          const tickets = document.getElementById('tickets').value;
+          const notes = document.getElementById('notes').value;
+
+          // Validate
+          if (!name || !phone) {
+            alert('الرجاء إدخال الاسم ورقم الهاتف');
+            return false;
+          }
+
+          // Build URL with query parameters
+          const params = new URLSearchParams({
+            book: 'submit',
+            name: name,
+            phone: phone,
+            tickets: tickets,
+            notes: notes || ''
+          });
+
+          // Force full page navigation - use absolute URL
+          const baseUrl = window.location.origin;
+          const targetUrl = baseUrl + '/?' + params.toString();
+
+          console.log('Redirecting to:', targetUrl);
+
+          // Try multiple methods to break out of iframe
+          try {
+            if (window.top) {
+              window.top.location.href = targetUrl;
+            }
+          } catch (e) {
+            console.log('top.location blocked:', e);
+          }
+
+          try {
+            if (window.parent && window.parent !== window) {
+              window.parent.location.href = targetUrl;
+            }
+          } catch (e) {
+            console.log('parent.location blocked:', e);
+          }
+
+          // Fallback - send message to parent
+          window.parent.postMessage({
+            type: 'BOOKING_SUBMIT',
+            url: targetUrl
+          }, '*');
+
+          // Last resort - direct navigation
+          setTimeout(function () {
+            window.location.href = targetUrl;
+          }, 100);
+
+          return false;
+        });
+      }
+    });
+  </script>
+</body>
+
+</html>

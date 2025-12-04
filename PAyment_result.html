@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>نتيجة الدفع – SNOW LIWA</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Noto+Kufi+Arabic:wght@400;600;700&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --color-bg: #f5fbff;
+            --color-bg-soft: #ffffff;
+            --color-accent: #4dafff;
+            --color-accent-soft: #ffcf70;
+            --color-text-main: #163046;
+            --color-text-muted: #6b7b8c;
+            --color-success: #10b981;
+            --color-danger: #ff4b6b;
+            --color-warning: #f59e0b;
+            --radius-lg: 18px;
+            --shadow-soft: 0 14px 40px rgba(7, 36, 63, 0.10);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Noto Kufi Arabic", "Nunito", system-ui, sans-serif;
+            background: radial-gradient(circle at top right, #ffffff, #f3f7ff 55%, #ffe9c3 120%);
+            color: var(--color-text-main);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: var(--color-bg-soft);
+            border-radius: var(--radius-lg);
+            padding: 30px;
+            box-shadow: var(--shadow-soft);
+            text-align: center;
+        }
+
+        .logo-title {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            color: var(--color-accent);
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: var(--color-text-muted);
+            margin-bottom: 20px;
+        }
+
+        .status-box {
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .status-box.success {
+            background: #d1fae5;
+            border: 1px solid var(--color-success);
+        }
+
+        .status-box.error {
+            background: #fee2e2;
+            border: 1px solid var(--color-danger);
+        }
+
+        .status-box.warning {
+            background: #fef3c7;
+            border: 1px solid var(--color-warning);
+        }
+
+        .status-box.info {
+            background: #dbeafe;
+            border: 1px solid var(--color-accent);
+        }
+
+        .status-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .status-message {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .status-details {
+            font-size: 13px;
+            color: var(--color-text-muted);
+        }
+
+        .info-row {
+            font-size: 13px;
+            margin: 8px 0;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--color-accent-soft), #f7b343);
+            color: #2b1b05;
+            text-decoration: none;
+            font-weight: 600;
+            box-shadow: 0 10px 26px rgba(211, 151, 49, 0.55);
+            margin-top: 16px;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="logo-title">SNOW LIWA</div>
+        <div class="subtitle">نتيجة الدفع · Payment Result</div>
+
+        {% if status == "completed" %}
+        <div class="status-box success">
+            <div class="status-icon">✅</div>
+            <div class="status-message">تم الدفع بنجاح!</div>
+            <div class="status-details">
+                شكرًا لاختياركم <strong>SNOW LIWA</strong> ❄️<br>
+                تذكرتك الإلكترونية جاهزة! يمكنك عرضها وطباعتها من الزر أدناه.<br>
+                <small>تواصل معنا على الواتساب لاستلام لوكيشن الموقع السري 🗺️</small>
+            </div>
+
+            {% if booking_id %}
+            <div style="margin-top: 20px;">
+                <a href="/ticket/{{ booking_id }}" target="_blank"
+                    style="display: inline-block; background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 14px 28px; border-radius: 999px; text-decoration: none; font-weight: 700; box-shadow: 0 10px 26px rgba(16, 185, 129, 0.4); transition: transform 0.2s;">
+                    🎟️ عرض وطباعة التذكرة · View & Print Ticket
+                </a>
+            </div>
+            {% endif %}
+        </div>
+        {% elif status in ["pending", "requires_payment_instrument", "requires_user_action"] %}
+        <div class="status-box info">
+            <div class="status-icon">ℹ️</div>
+            <div class="status-message">عملية الدفع قيد المعالجة</div>
+            <div class="status-details">
+                عملية الدفع قيد المعالجة أو لم تكتمل بعد.<br>
+                لو تأكدت أن المبلغ تم خصمه، أرسل لنا رقم الحجز لنراجع الحالة.
+            </div>
+        </div>
+        {% elif status in ["failed", "canceled", "cancel", "failure"] %}
+        <div class="status-box error">
+            <div class="status-icon">❌</div>
+            <div class="status-message">لم تتم عملية الدفع</div>
+            <div class="status-details">
+                لم تتم عملية الدفع أو تم إلغاؤها.<br>
+                يمكنك إعادة المحاولة من صفحة الحجز أو التواصل معنا للمساعدة.
+            </div>
+        </div>
+        {% else %}
+        <div class="status-box warning">
+            <div class="status-icon">⚠️</div>
+            <div class="status-message">تعذر التأكد من حالة الدفع</div>
+            <div class="status-details">
+                يرجى التواصل معنا على الواتساب مع رقم الحجز للتحقق من العملية.
+            </div>
+        </div>
+        {% endif %}
+
+        {% if booking_id %}
+        <div class="info-row"><strong>Booking ID:</strong> {{ booking_id }}</div>
+        {% endif %}
+        {% if pi_id %}
+        <div class="info-row"><strong>Payment Intent ID:</strong> {{ pi_id }}</div>
+        {% endif %}
+
+        <hr style="border:none; border-top:1px solid #e4edf5; margin:20px 0;">
+
+        <div style="font-size:13px;color:var(--color-text-muted);">
+            📱 للتواصل: واتساب أو إنستغرام <strong>snowliwa</strong> مع ذكر رقم الحجز.
+        </div>
+
+        <a href="/" class="btn">Back to SNOW LIWA home</a>
+    </div>
+</body>
+
+</html>
