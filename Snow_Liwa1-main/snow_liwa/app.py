@@ -101,7 +101,7 @@ PAGES = {
     "Dashboard (Admin)": "dashboard",
 }
 
-ADMIN_PASSWORD = "snowadmin123"  # Legacy; login removed
+ADMIN_PASSWORD = "0502992"  # Hidden admin unlock passcode
 
 # =========================
 # DATA HELPERS
@@ -970,6 +970,12 @@ def inject_base_css():
 def init_state():
     if "page" not in st.session_state:
         st.session_state.page = "Welcome"
+    if "admin_taps" not in st.session_state:
+        st.session_state.admin_taps = 0
+    if "show_admin_password" not in st.session_state:
+        st.session_state.show_admin_password = False
+    if "admin_unlock_error" not in st.session_state:
+        st.session_state.admin_unlock_error = ""
 
 
 def page_nav():
@@ -1365,6 +1371,35 @@ def render_welcome():
 
     st.markdown("<div class='section-spacer'></div>", unsafe_allow_html=True)
     render_customer_info_panel()
+
+    # Hidden admin unlock: tap the subtle button five times, then enter passcode to access dashboard.
+    trigger_cols = st.columns([0.96, 0.04])
+    with trigger_cols[1]:
+        if st.button("···", key="admin_secret_tap", help="", width="stretch"):
+            st.session_state.admin_taps = st.session_state.get("admin_taps", 0) + 1
+            if st.session_state.admin_taps >= 5:
+                st.session_state.show_admin_password = True
+                st.session_state.admin_unlock_error = ""
+                st.session_state.admin_taps = 0
+
+    if st.session_state.get("show_admin_password"):
+        st.info("إدخال رمز الإدارة للانتقال إلى لوحة التحكم.")
+        if st.session_state.get("admin_unlock_error"):
+            st.error(st.session_state.admin_unlock_error)
+        with st.form("admin_unlock_form", clear_on_submit=True):
+            admin_code = st.text_input("Admin passcode", type="password")
+            unlock = st.form_submit_button("دخول لوحة التحكم")
+        if unlock:
+            if admin_code.strip() == ADMIN_PASSWORD:
+                st.session_state.is_admin = True
+                st.session_state.page = "Dashboard"
+                st.session_state.show_admin_password = False
+                st.session_state.admin_taps = 0
+                st.session_state.admin_unlock_error = ""
+                st.rerun()
+            else:
+                st.session_state.admin_unlock_error = "رمز غير صحيح. حاول مرة أخرى."
+                st.session_state.show_admin_password = True
 
     is_admin = st.session_state.get("is_admin", False)
     if is_admin:
