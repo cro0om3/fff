@@ -78,6 +78,21 @@ def get_ziina_test_mode():
     return test_mode
 
 
+def ensure_ziina_secrets():
+    """Validate Ziina secrets and show Streamlit warnings if misconfigured."""
+    access_token, app_base_url, test_mode = get_ziina_config()
+    if not access_token:
+        st.warning("Ziina access token not found in `st.secrets['ziina']['access_token']`. Please add it to `.streamlit/secrets.toml`.")
+        return False
+    if access_token.startswith("REPLACE_WITH") or access_token.strip() == "":
+        st.warning("Ziina access token looks like a placeholder. Replace it in `.streamlit/secrets.toml` with your real token.")
+        return False
+    # Informational display in test mode
+    if test_mode:
+        st.info("Ziina is running in test mode (secrets: `ziina.test_mode = true`).")
+    return True
+
+
 PAGES = {
     "Welcome": "welcome",
     "Who we are": "who",
