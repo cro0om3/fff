@@ -392,26 +392,13 @@ def redirect_client_to_payment(url: str) -> None:
     )
 
 
-
-
-def open_url_in_new_tab(url: str) -> None:
-    """Open the given URL in a new browser tab using JavaScript."""
-    safe_url = json.dumps(url)
-    components.html(
-        f"""
-        <script>
-        (function() {{
-            const target = {safe_url};
-            try {{
-                window.open(target, '_blank');
-            }} catch (err) {{
-                window.location.href = target;
-            }}
-        }})();
-        </script>
-        """,
-        height=0,
-    )
+def resolve_media_path(path_value):
+    if not path_value:
+        return None
+    candidate = Path(path_value)
+    if not candidate.is_absolute():
+        candidate = BASE_DIR / candidate
+    return candidate if candidate.exists() else None
 def inject_base_css():
     st.markdown(
         """
@@ -948,6 +935,14 @@ def inject_base_css():
             color: #2b1b05;
             box-shadow: 0 10px 26px rgba(211, 151, 49, 0.45);
         }
+        .payment-cta-wrapper {
+            margin-top: 1.2rem;
+            display: flex;
+            justify-content: center;
+        }
+        .payment-cta-wrapper .btn {
+            min-width: 280px;
+        }
         @media (max-width: 900px) {
             .landing-header { flex-direction: column; align-items: flex-start; }
             .hero-section { padding: 1.6rem 1.4rem; }
@@ -1145,19 +1140,23 @@ def render_welcome():
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        hero_image = hero_image_path if hero_image_path and os.path.exists(
-            hero_image_path) else None
-        poster_image = poster_path if poster_path and os.path.exists(
-            poster_path) else None
+        hero_image = resolve_media_path(hero_image_path)
+        poster_image = resolve_media_path(poster_path)
         image_path = hero_image or poster_image
         if image_path:
             try:
-                img_bytes = Path(image_path).read_bytes()
+                img_bytes = image_path.read_bytes()
                 img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+                mime = "image/png"
+                suffix = image_path.suffix.lower()
+                if suffix in {".jpg", ".jpeg"}:
+                    mime = "image/jpeg"
+                elif suffix == ".webp":
+                    mime = "image/webp"
                 st.markdown(
                     f"""
                     <div class="poster-box">
-                        <img src="data:image/png;base64,{img_b64}" alt="SNOW LIWA" />
+                        <img src="data:{mime};base64,{img_b64}" alt="SNOW LIWA" />
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -1348,16 +1347,20 @@ def render_welcome():
                 f"تم إنشاء الحجز! رقم الحجز: **{booking_id}** والمبلغ **{total_amount:.2f} {ticket_currency}**. "
                 "يمكنك تنزيل التذكرة أو إرسالها مباشرة."
             )
-            # If Ziina provides a redirect_url, automatically open it in a new tab
-            # and show a single fallback button to re-open if popup blocked.
+            # Show a manual payment CTA button so the customer proceeds when ready.
             if redirect_url:
-                open_url_in_new_tab(redirect_url)
+                safe_redirect = html.escape(redirect_url, quote=True)
                 st.markdown(
-                    f"<div class=\"footer-note\">فتح صفحة الدفع في نافذة جديدة (إذا لم تفتح تلقائياً، اضغط الزر أدناه)</div>",
+                    f"""
+                    <div class="payment-cta-wrapper">
+                        <a class="btn btn-primary" href="{safe_redirect}" target="_blank" rel="noopener noreferrer">
+                            💳 إكمال الدفع (Ziina)
+                        </a>
+                    </div>
+                    <div class="footer-note">اضغط الزر لإكمال الدفع عبر Ziina في نافذة جديدة.</div>
+                    """,
                     unsafe_allow_html=True,
                 )
-                if st.button("💳 افتح صفحة الدفع في Ziina (إعادة المحاولة)", type="primary", use_container_width=True):
-                    open_url_in_new_tab(redirect_url)
             else:
                 st.info("الدفع عند الوصول أو سيتم مشاركة رابط الدفع لاحقاً.")
 
@@ -1827,16 +1830,18 @@ def render_settings():
     poster_file = st.file_uploader("Upload ticket poster (PNG, JPG, JPEG)", type=[
                                    "png", "jpg", "jpeg"], key="poster_upload")
     if poster_file:
-        poster_path = "assets/ticket_poster.png"
-        os.makedirs(os.path.dirname(poster_path), exist_ok=True)
+        poster_rel_path = Path("assets") / "ticket_poster.png"
+        poster_path = BASE_DIR / poster_rel_path
+        poster_path.parent.mkdir(parents=True, exist_ok=True)
         with open(poster_path, "wb") as f:
             f.write(poster_file.read())
-        settings["ticket_poster_path"] = poster_path
+        settings["ticket_poster_path"] = str(poster_rel_path)
         from settings_utils import save_settings
         save_settings(settings)
         st.success("Poster image uploaded and saved!")
-    if os.path.exists(settings.get("ticket_poster_path", "")):
-        st.image(settings["ticket_poster_path"], use_column_width=True)
+    resolved_poster = resolve_media_path(settings.get("ticket_poster_path", ""))
+    if resolved_poster:
+        st.image(str(resolved_poster), use_column_width=True)
     else:
         st.info("No poster image configured yet.")
 
