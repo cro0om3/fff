@@ -392,6 +392,26 @@ def redirect_client_to_payment(url: str) -> None:
     )
 
 
+
+
+def open_url_in_new_tab(url: str) -> None:
+    """Open the given URL in a new browser tab using JavaScript."""
+    safe_url = json.dumps(url)
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            const target = {safe_url};
+            try {{
+                window.open(target, '_blank');
+            }} catch (err) {{
+                window.location.href = target;
+            }}
+        }})();
+        </script>
+        """,
+        height=0,
+    )
 def inject_base_css():
     st.markdown(
         """
@@ -953,14 +973,20 @@ def init_state():
 
 
 def page_nav():
+    # Hide the full sidebar on the landing (Welcome) page to give a cleaner look.
+    # Still provide small top-level buttons so users can navigate to Dashboard/Settings.
+    pages = ["Welcome", "Who we are", "Experience", "Contact", "Dashboard", "Settings"]
+    if st.session_state.get("page", "Welcome") == "Welcome":
+        # Landing page should not expose admin links (Dashboard/Settings) to clients.
+        # Do not render the sidebar or any admin navigation here.
+        return
+
     with st.sidebar:
         st.title("SNOW LIWA")
         nav = st.radio(
             "Navigation",
-            ["Welcome", "Who we are", "Experience",
-                "Contact", "Dashboard", "Settings"],
-            index=["Welcome", "Who we are", "Experience", "Contact", "Dashboard", "Settings"].index(
-                st.session_state.page) if st.session_state.page in ["Welcome", "Who we are", "Experience", "Contact", "Dashboard", "Settings"] else 0,
+            pages,
+            index=pages.index(st.session_state.page) if st.session_state.page in pages else 0,
             key="sidebar_nav_radio",
         )
         st.session_state.page = nav
@@ -1316,30 +1342,16 @@ def render_welcome():
                 f"تم إنشاء الحجز! رقم الحجز: **{booking_id}** والمبلغ **{total_amount:.2f} {ticket_currency}**. "
                 "يمكنك تنزيل التذكرة أو إرسالها مباشرة."
             )
-            cta_ticket, cta_wa = st.columns(2, gap="small")
-            with cta_ticket:
-                st.download_button(
-                    "⬇️ تنزيل التذكرة باسم العميل",
-                    data=ticket_bytes,
-                    file_name=f"{booking_id}_ticket.txt",
-                    mime="text/plain",
-                    use_container_width=True,
-                )
-            with cta_wa:
-                share_url = f"https://wa.me/?text={urllib.parse.quote(ticket_text)}"
-                st.link_button(
-                    "📲 إرسال التذكرة على واتساب",
-                    share_url,
-                    use_container_width=True,
-                )
-
+            # If Ziina provides a redirect_url, automatically open it in a new tab
+            # and show a single fallback button to re-open if popup blocked.
             if redirect_url:
-                if st.button("💳 إكمال الدفع (Ziina)", type="primary", use_container_width=True):
-                    redirect_client_to_payment(redirect_url)
+                open_url_in_new_tab(redirect_url)
                 st.markdown(
-                    f"<div class=\"footer-note\"><a href=\"{redirect_url}\" target=\"_blank\">فتح صفحة الدفع في نافذة جديدة</a></div>",
+                    f"<div class=\"footer-note\">فتح صفحة الدفع في نافذة جديدة (إذا لم تفتح تلقائياً، اضغط الزر أدناه)</div>",
                     unsafe_allow_html=True,
                 )
+                if st.button("💳 افتح صفحة الدفع في Ziina (إعادة المحاولة)", type="primary", use_container_width=True):
+                    open_url_in_new_tab(redirect_url)
             else:
                 st.info("الدفع عند الوصول أو سيتم مشاركة رابط الدفع لاحقاً.")
 
