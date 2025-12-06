@@ -188,7 +188,7 @@ def render_welcome():
                         <span>Snow Experience</span>
                     </div>
                     <p class="snow-experience-text">
-                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 3.
+                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 175.
                     </p>
                 </div>
                 """, unsafe_allow_html=True)

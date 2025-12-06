@@ -928,7 +928,7 @@ def render_welcome():
                         <span>Snow Experience</span>
                     </div>
                     <p class="snow-experience-text">
-                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 3.
+                        In a unique initiative that gives visitors a pleasant snowy atmosphere and an exceptional and unforgettable experience, you can enjoy watching the snowfall, and try a hot chocolate drink, with high-end hospitality including strawberries and a chocolate fountain. The entrance ticket is only AED 175.
                     </p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1224,7 +1224,7 @@ def render_experience():
 
 في مبادرةٍ فريدةٍ تمنح الزوّار أجواءً ثلجية ممتعة وتجربةً استثنائية لا تُنسى، يمكنكم الاستمتاع بمشاهدة تساقط الثلج، وتجربة مشروب الشوكولاتة الساخنة، مع ضيافةٍ راقية تشمل الفراولة ونافورة الشوكولاتة.
 
-تذكرة الدخول فقط بـ 3 درهمًا 
+تذكرة الدخول فقط بـ 175 درهمًا 
 """
 
     en_block_1 = """
@@ -1234,7 +1234,7 @@ you can enjoy watching the snowfall, and try a hot chocolate
 drink, with high-end hospitality including strawberries and a
 chocolate fountain.
 
-The entrance ticket is only AED 3
+The entrance ticket is only AED 175
 """
 
     ar_block_2 = """
